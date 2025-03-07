@@ -327,6 +327,14 @@ public partial class Program
                            Translate the strings into these languages. Use the language code in brackets instead of the full language name.
                            {{languageStrings}}
 
+                           Words that should not be translated and be kept as the original string:
+                           Curiosity - the name of the app
+                           Space - a custom collection of items by the user
+                           Workspace - the name of a Curiosity server instance
+                           Sidebar - the sidebar in the app
+
+                           Urls or urls in html should be kept literal and not be translated. Query parameters in urls should also be kept literal and not be translated.
+
                            Only answer with a json document with this schema and nothing else:
                            {
                              "original string" : {
@@ -346,17 +354,12 @@ public partial class Program
 
                            """""";
 
-            Console.WriteLine("PROMPT:");
-            Console.WriteLine(prompt);
-
             ChatCompletion completion = await client.CompleteChatAsync(
             [
                 new UserChatMessage(prompt),
             ], options);
 
             var result = completion.Content[0].Text;
-            Console.WriteLine("RESULT:");
-            Console.WriteLine(result);
 
             if (result.StartsWith("```json"))
             {
@@ -420,10 +423,13 @@ public partial class Program
                 }
             }
             current += chunkSize;
-            TimeSpan totalTime = stopWatch.Elapsed * ((double)total / (double)current);
+            var elapsed = stopWatch.Elapsed;
 
-            Console.WriteLine($"Done {current}/{total} remiaining: {totalTime - stopWatch.Elapsed:g}");
-            break;
+            TimeSpan totalTime = elapsed * ((double)total / (double)current);
+
+            Console.WriteLine($"Done {current}/{total} remiaining: {totalTime - elapsed:g}");
+
+            if (current > 500) break;
         }
 
         return allStrings;
