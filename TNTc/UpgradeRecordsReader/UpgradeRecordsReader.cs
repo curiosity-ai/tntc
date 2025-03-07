@@ -7,10 +7,6 @@ public static class UpgradeRecordsReader
 {
     public static IEnumerable<TranslationRecords> ReadRecords(string folderName)
     {
-        var sources = File.ReadAllText(Path.Combine(folderName, ".tnt", "sources.json"));
-
-        var oldSources = JsonSerializer.Deserialize<OldSources>(sources, OldSourcesConverter.Settings);
-
         foreach (var translationFile in Directory.EnumerateFiles(Path.Combine(folderName, ".tnt"), "translation-*.json"))
         {
             var translationFileText = File.ReadAllText(Path.Combine(folderName, translationFile));

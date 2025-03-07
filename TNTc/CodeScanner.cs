@@ -15,10 +15,28 @@ namespace CodeScanner
         public SourceLocation SourceLocation { get; set; }
     }
 
-    public class SourceLocation
+    public class SourceLocation : IEquatable<SourceLocation>
     {
         public string SourceFilePath { get; set; }
         public int    SourceFileLine { get; set; }
+
+        public bool Equals(SourceLocation? other)
+        {
+            if (other is null) return false;
+            if (ReferenceEquals(this, other)) return true;
+            return SourceFilePath == other.SourceFilePath && SourceFileLine == other.SourceFileLine;
+        }
+        public override bool Equals(object? obj)
+        {
+            if (obj is null) return false;
+            if (ReferenceEquals(this, obj)) return true;
+            if (obj.GetType() != GetType()) return false;
+            return Equals((SourceLocation)obj);
+        }
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(SourceFilePath, SourceFileLine);
+        }
     }
 
     public class SourceLocationConverter : JsonConverter<SourceLocation>

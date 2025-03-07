@@ -16,6 +16,26 @@ namespace TNT.CLI;
 
 public partial class Program
 {
+    private static JsonSerializerOptions _optionsWrite = new JsonSerializerOptions()
+    {
+        WriteIndented = true,
+        Converters =
+        {
+            new SourceLocationConverter(),
+            new TranslationRecordStateConverter()
+        },
+        Encoder = new PassThroughJavaScriptEncoder()
+    };
+
+    private static JsonSerializerOptions _optionsRead = new JsonSerializerOptions()
+    {
+        Converters =
+        {
+            new SourceLocationConverter(),
+            new TranslationRecordStateConverter()
+        },
+    };
+
     private static List<TranslatableString> AnalyzeStrings(string sourceCode, string filePath)
     {
         var tree = CSharpSyntaxTree.ParseText(sourceCode);
@@ -31,7 +51,7 @@ public partial class Program
         return collector._stringsWithTMethod;
     }
 
-    public static IEnumerable<TranslatableString> HandleTranslationProjectFolder(string folderPath, string rootFolderPath)
+    public static IEnumerable<TranslatableString> ExtractStrings(string folderPath, string rootFolderPathPrefix)
     {
         var allCSFiles = Directory.EnumerateFiles(folderPath, "*.cs", SearchOption.AllDirectories);
 
@@ -39,7 +59,7 @@ public partial class Program
         {
             var sourceCode = File.ReadAllText(csFile);
 
-            foreach (var translatableString in AnalyzeStrings(sourceCode, csFile.Substring(rootFolderPath.Length)))
+            foreach (var translatableString in AnalyzeStrings(sourceCode, csFile.Substring(rootFolderPathPrefix.Length)))
             {
                 yield return translatableString;
             }
@@ -47,11 +67,20 @@ public partial class Program
         }
     }
 
-    public static IEnumerable<string> EnumerateTranslationProjectFolders(string rootFolderPath)
+    public static IEnumerable<string> EnumerateDirectoriesToSearchForStrings(string rootFolderPath)
     {
-        foreach (var enumerateDirectory in Directory.EnumerateDirectories(rootFolderPath, ".tnt", SearchOption.AllDirectories))
+        yield return rootFolderPath;
+        Console.WriteLine($"Searching for strings in {Path.GetFullPath(rootFolderPath)}");
+
+        if (File.Exists(Path.Combine(rootFolderPath, ".tnt", "extra-sources.json")))
         {
-            yield return enumerateDirectory.Substring(0, enumerateDirectory.Length - ".tnt".Length);
+            foreach (var extraPath in JsonSerializer.Deserialize<string[]>(File.ReadAllText(Path.Combine(rootFolderPath, ".tnt", "extra-sources.json"), Encoding.UTF8)))
+            {
+                var fullPath = Path.GetFullPath(Path.Combine(rootFolderPath, extraPath));
+
+                yield return fullPath;
+                Console.WriteLine($"Searching for strings in {fullPath}");
+            }
         }
     }
 
@@ -72,81 +101,17 @@ public partial class Program
 
     public static async Task Extract(string rootFolderPath)
     {
+        var languages = Enum.GetValues<Language>();
 
-        foreach (var tntFolder in EnumerateTranslationProjectFolders(rootFolderPath))
+        var allStrings = ReadExisting(rootFolderPath, languages);
+
+        var sourceFolders = EnumerateDirectoriesToSearchForStrings(rootFolderPath).ToArray();
+
+        var rootFolderPathPrefix = LongestCommonPrefix(sourceFolders);
+
+        foreach (var tntFolder in sourceFolders)
         {
-            var allStrings = new Dictionary<string, TranslatedLanguageStrings>();
-
-            var existing = UpgradeRecordsReader.ReadRecords(tntFolder).ToArray();
-
-            foreach (var exisitngRecords in existing)
-            {
-                foreach (var exisitngRecord in exisitngRecords.Records)
-                {
-                    switch (exisitngRecord.State)
-                    {
-                        case OldGoogleTranslateTranslationRecordState.New:
-                        case OldGoogleTranslateTranslationRecordState.NeedsReview:
-                        case OldGoogleTranslateTranslationRecordState.NeedsReviewTranslation:
-                        {
-                            continue; // ignore, needs better translation than google translate
-                        }
-                    }
-
-                    if (allStrings.TryGetValue(exisitngRecord.OriginalString, out TranslatedLanguageStrings value))
-                    {
-//                        value.SourceLocations.AddRange(exisitngRecord.SourceLocations);
-                        if (value.TranslatedStrings.TryGetValue(exisitngRecords.Language, out var translatedStringForLanguage))
-                        {
-                            throw new InvalidOperationException();
-                        }
-                        else
-                        {
-                            value.TranslatedStrings[exisitngRecords.Language] = new TranslatedString()
-                            {
-                                String = exisitngRecord.TranslatedString,
-                                State = exisitngRecord.State switch
-                                {
-                                    OldGoogleTranslateTranslationRecordState.New                    => TranslationRecordState.New,
-                                    OldGoogleTranslateTranslationRecordState.NeedsReview            => TranslationRecordState.NeedsReview,
-                                    OldGoogleTranslateTranslationRecordState.NeedsReviewTranslation => TranslationRecordState.NeedsReviewTranslation,
-                                    OldGoogleTranslateTranslationRecordState.Translated             => TranslationRecordState.Translated,
-                                    OldGoogleTranslateTranslationRecordState.Final                  => TranslationRecordState.Final,
-                                    _                                                               => throw new ArgumentOutOfRangeException()
-                                }
-                            };
-                        }
-                    }
-                    else
-                    {
-                        allStrings[exisitngRecord.OriginalString] = new TranslatedLanguageStrings()
-                        {
-                            OriginalString = exisitngRecord.OriginalString,
-                            TranslatedStrings = new Dictionary<Language, TranslatedString>()
-                            {
-                                {
-                                    exisitngRecords.Language, new TranslatedString()
-                                    {
-                                        String = exisitngRecord.TranslatedString,
-                                        State = exisitngRecord.State switch
-                                        {
-                                            OldGoogleTranslateTranslationRecordState.New                    => TranslationRecordState.New,
-                                            OldGoogleTranslateTranslationRecordState.NeedsReview            => TranslationRecordState.NeedsReview,
-                                            OldGoogleTranslateTranslationRecordState.NeedsReviewTranslation => TranslationRecordState.NeedsReviewTranslation,
-                                            OldGoogleTranslateTranslationRecordState.Translated             => TranslationRecordState.Translated,
-                                            OldGoogleTranslateTranslationRecordState.Final                  => TranslationRecordState.Final,
-                                            _                                                               => throw new ArgumentOutOfRangeException()
-                                        }
-                                    }
-                                }
-                            },
-                            SourceLocations = new List<SourceLocation>()
-                        };
-                    }
-                }
-            }
-
-            foreach (var translatableString in HandleTranslationProjectFolder(tntFolder, rootFolderPath))
+            foreach (var translatableString in ExtractStrings(tntFolder, rootFolderPathPrefix))
             {
                 if (allStrings.TryGetValue(translatableString.SourceString, out TranslatedLanguageStrings value))
                 {
@@ -165,13 +130,75 @@ public partial class Program
             }
 
 
-            allStrings = await TranslateStringsAsync(allStrings, new[] { Language.German, Language.French, Language.Italian, Language.Chinese, Language.Malay });
-
-            WriteStringsToDisk(tntFolder, allStrings);
-
         }
+        allStrings = await TranslateStringsAsync(allStrings, languages);
+
+        WriteStringsToDisk(rootFolderPath, allStrings);
 
         Console.WriteLine("Done.");
+    }
+
+    static string LongestCommonPrefix(string[] strs)
+    {
+        if (strs == null || strs.Length == 0)
+            return "";
+
+        string prefix = strs[0];
+
+        foreach (string str in strs)
+        {
+            while (!str.StartsWith(prefix))
+            {
+                if (prefix.Length == 0)
+                    return "";
+
+                prefix = prefix.Substring(0, prefix.Length - 1);
+            }
+        }
+
+        return prefix;
+    }
+
+    private static Dictionary<string, TranslatedLanguageStrings> ReadExisting(string tntFolder, Language[] languages)
+    {
+        var strings = new Dictionary<string, TranslatedLanguageStrings>();
+
+        foreach (var language in languages)
+        {
+            var translationJson = File.ReadAllText(Path.Combine(tntFolder, ".tnt", $"translation-{LanguageHelper.MapLanguage(language)}.json"), Encoding.UTF8);
+
+            foreach (var translatedRecord in JsonSerializer.Deserialize<List<TranslatedRecord>>(translationJson, _optionsRead))
+            {
+                if (strings.TryGetValue(translatedRecord.OriginalString, out TranslatedLanguageStrings value))
+                {
+                    value.SourceLocations = new List<SourceLocation>();
+
+                    value.TranslatedStrings[language] = new TranslatedString()
+                    {
+                        State  = translatedRecord.State,
+                        String = translatedRecord.TranslatedString
+                    };
+
+                    strings[translatedRecord.OriginalString] = value;
+                }
+                else
+                {
+                    strings[translatedRecord.OriginalString] = new TranslatedLanguageStrings()
+                    {
+                        OriginalString = translatedRecord.OriginalString,
+                        TranslatedStrings = new Dictionary<Language, TranslatedString>
+                        {
+                            {
+                                language, new TranslatedString() { State = translatedRecord.State, String = translatedRecord.TranslatedString }
+                            }
+                        },
+                        SourceLocations = new List<SourceLocation>()
+                    };
+                }
+            }
+        }
+
+        return strings;
     }
 
     public class TranslatedRecord
@@ -182,19 +209,16 @@ public partial class Program
         public SourceLocation[]       SourceLocations  { get; set; }
     }
 
-    private static void WriteStringsToDisk(string tntFolder, Dictionary<string, TranslatedLanguageStrings> allStrings)
+    private static void WriteStringsToDisk(string rootFolder, Dictionary<string, TranslatedLanguageStrings> allStrings)
     {
-//TODO write .tnt/sources.json
-//TODO write .tnt/translation-*.json.json
-
-        if (!Directory.Exists(Path.Combine(tntFolder, ".tnt")))
+        if (!Directory.Exists(Path.Combine(rootFolder, ".tnt")))
         {
-            Directory.CreateDirectory(Path.Combine(tntFolder, ".tnt"));
+            Directory.CreateDirectory(Path.Combine(rootFolder, ".tnt"));
         }
 
-        if (!Directory.Exists(Path.Combine(tntFolder, ".tnt-content")))
+        if (!Directory.Exists(Path.Combine(rootFolder, ".tnt-content")))
         {
-            Directory.CreateDirectory(Path.Combine(tntFolder, ".tnt-content"));
+            Directory.CreateDirectory(Path.Combine(rootFolder, ".tnt-content"));
         }
 
         var perLanguage        = new Dictionary<Language, List<TranslatedRecord>>();
@@ -224,46 +248,36 @@ public partial class Program
             }
         }
 
-        var encoderSettings = new TextEncoderSettings();
-        encoderSettings.AllowRange(UnicodeRanges.All);
-        encoderSettings.AllowCharacters('\u0022', '\u0027', '\u00A0');
-//        encoderSettings.AllowCharacters('\u0022');
-//        encoderSettings.AllowRange(UnicodeRanges.Cyrillic);
-
-        var optionsWrite = new JsonSerializerOptions()
-        {
-            WriteIndented = true,
-            Converters =
-            {
-                new SourceLocationConverter(),
-                new TranslationRecordStateConverter()
-            },
-//            Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
-            Encoder = new PassThroughJavaScriptEncoder()
-//            Encoder =JavaScriptEncoder.Create(encoderSettings), 
-
-        };
-
-        var optionsRead = new JsonSerializerOptions()
-        {
-            Converters =
-            {
-                new SourceLocationConverter(),
-                new TranslationRecordStateConverter()
-            },
-        };
-
         foreach (var (language, translationPairs) in perLanguageTNTFile)
         {
-            File.WriteAllText(Path.Combine(tntFolder, ".tnt-content", $"{LanguageHelper.MapLanguage(language)}.tnt"), JsonSerializer.Serialize(translationPairs.OrderBy(e => e.First(), StringComparer.Ordinal).ToArray(), optionsWrite), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(rootFolder, ".tnt-content", $"{LanguageHelper.MapLanguage(language)}.tnt"), JsonSerializer.Serialize(translationPairs.OrderBy(e => e.First(), StringComparer.Ordinal).ToArray(), _optionsWrite), Encoding.UTF8);
         }
 
         foreach (var (language, translationStates) in perLanguage)
         {
-            File.WriteAllText(Path.Combine(tntFolder, ".tnt", $"translation-{LanguageHelper.MapLanguage(language)}.json"), JsonSerializer.Serialize(translationStates.OrderBy(e => e.OriginalString, StringComparer.Ordinal).ToArray(), optionsWrite), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(rootFolder, ".tnt", $"translation-{LanguageHelper.MapLanguage(language)}.json"), JsonSerializer.Serialize(translationStates.OrderBy(e => e.OriginalString, StringComparer.Ordinal).ToArray(), _optionsWrite), Encoding.UTF8);
         }
     }
 
+
+    private static IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> FilterStrings(IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> allStrings)
+    {
+
+        foreach (var keyValuePair in allStrings)
+        {
+            if (keyValuePair.Value.SourceLocations is object
+             && keyValuePair.Value.SourceLocations.Any()
+             && (keyValuePair.Value.TranslatedStrings is null
+                 || keyValuePair.Value.TranslatedStrings.Any(s => s.Value.State switch
+                    {
+                        TranslationRecordState.New => true,
+                        _                          => false
+                    })))
+            {
+                yield return new KeyValuePair<string, TranslatedLanguageStrings>(keyValuePair.Key, keyValuePair.Value);
+            }
+        }
+    }
 
 
     private static async Task<Dictionary<string, TranslatedLanguageStrings>> TranslateStringsAsync(Dictionary<string, TranslatedLanguageStrings> allStrings, Language[] languages)
@@ -277,14 +291,9 @@ public partial class Program
         var current   = 0;
         var chunkSize = 25;
 
-        foreach (var allStringsChunks in allStrings.Chunk(chunkSize))
+        foreach (var allStringsChunks in FilterStrings(allStrings).Chunk(chunkSize))
         {
-
-            //TODO filter out already translated
-
-
             var languageStrings = string.Join("\n", languages.Select(l => $"{l} ({LanguageHelper.MapLanguage(l)})"));
-
 
             var prompt = $$""""""
                            You are translating strings extracted from the source code of an application into multiple languages. 
@@ -308,7 +317,7 @@ public partial class Program
                            }
 
                            Translate these strings :
-                           {{JsonSerializer.Serialize(allStringsChunks, new JsonSerializerOptions() { WriteIndented = true })}}
+                           {{JsonSerializer.Serialize(allStringsChunks.Select(kv => kv.Key).ToArray(), _optionsWrite)}}
 
                            """""";
 
