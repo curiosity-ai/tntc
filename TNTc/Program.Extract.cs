@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -101,7 +102,8 @@ public partial class Program
 
     public static async Task Extract(string rootFolderPath)
     {
-        var languages = Enum.GetValues<Language>();
+//        var languages = Enum.GetValues<Language>();
+        Language[] languages = [Language.Chinese, Language.German, Language.French, Language.Spansih, Language.Italian, Language.Portuguese];
 
         var allStrings = ReadExisting(rootFolderPath, languages);
 
@@ -128,8 +130,6 @@ public partial class Program
                     };
                 }
             }
-
-
         }
         allStrings = await TranslateStringsAsync(allStrings, languages);
 
@@ -260,7 +260,7 @@ public partial class Program
     }
 
 
-    private static IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> FilterStrings(IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> allStrings)
+    private static IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> FilterStrings(IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> allStrings, Language[] languages)
     {
 
         foreach (var keyValuePair in allStrings)
@@ -268,6 +268,7 @@ public partial class Program
             if (keyValuePair.Value.SourceLocations is object
              && keyValuePair.Value.SourceLocations.Any()
              && (keyValuePair.Value.TranslatedStrings is null
+                 || languages.Any(l => !keyValuePair.Value.TranslatedStrings.ContainsKey(l))
                  || keyValuePair.Value.TranslatedStrings.Any(s => s.Value.State switch
                     {
                         TranslationRecordState.New => true,
@@ -287,11 +288,35 @@ public partial class Program
 
         ChatClient client = new(model: "gpt-4o-mini", apiKey: apiKey);
 
-        var total     = allStrings.Count;
-        var current   = 0;
-        var chunkSize = 25;
+        var allStringsFiltered = FilterStrings(allStrings.AsEnumerable(), languages).ToArray();
 
-        foreach (var allStringsChunks in FilterStrings(allStrings).Chunk(chunkSize))
+        var total     = allStringsFiltered.Length;
+        var current   = 0;
+        var chunkSize = 15;
+
+        ChatCompletionOptions options = new()
+        {
+            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                jsonSchemaFormatName: "translated_strings",
+                jsonSchema: BinaryData.FromBytes("""
+                                                 {
+                                                     "type" : "object",
+                                                     "properties": {},
+                                                     "additionalProperties" : {
+                                                         "type" : "object",
+                                                         "properties": {},
+                                                         "additionalProperties" : {
+                                                             "type" : "string"
+                                                        }
+                                                     }
+                                                 }
+                                                 """u8.ToArray()),
+                jsonSchemaIsStrict: true)
+        };
+
+        var stopWatch = Stopwatch.StartNew();
+
+        foreach (var allStringsChunks in allStringsFiltered.Chunk(chunkSize))
         {
             var languageStrings = string.Join("\n", languages.Select(l => $"{l} ({LanguageHelper.MapLanguage(l)})"));
 
@@ -304,16 +329,16 @@ public partial class Program
 
                            Only answer with a json document with this schema and nothing else:
                            {
-                             "original string" :   {
+                             "original string" : {
                                   "language code" : "translated string",
                                   "language code2" : "translated string2",
                                   ...
-                           },
-                             "original string2" :   {
+                             },
+                             "original string2" : {
                                   "language code" : "translated string",
                                   "language code2" : "translated string2",
                                   ...
-                           }
+                             }
                            }
 
                            Translate these strings :
@@ -321,10 +346,16 @@ public partial class Program
 
                            """""";
 
+            Console.WriteLine("PROMPT:");
+            Console.WriteLine(prompt);
 
-            ChatCompletion completion = await client.CompleteChatAsync(prompt);
+            ChatCompletion completion = await client.CompleteChatAsync(
+            [
+                new UserChatMessage(prompt),
+            ], options);
 
             var result = completion.Content[0].Text;
+            Console.WriteLine("RESULT:");
             Console.WriteLine(result);
 
             if (result.StartsWith("```json"))
@@ -341,7 +372,9 @@ public partial class Program
 
             foreach (var (origString, translatedPairs) in resultParsed)
             {
-                if (allStrings.TryGetValue(origString, out TranslatedLanguageStrings translatedStrings))
+                TranslatedLanguageStrings translatedStrings;
+
+                if (allStrings.TryGetValue(origString, out translatedStrings))
                 {
                     foreach (var (langCode, translatedString) in translatedPairs)
                     {
@@ -349,7 +382,7 @@ public partial class Program
 
                         translatedStrings.TranslatedStrings ??= new Dictionary<Language, TranslatedString>();
 
-                        if (!translatedStrings.TranslatedStrings.ContainsKey(language))
+                        if (!translatedStrings.TranslatedStrings.ContainsKey(language) || translatedStrings.TranslatedStrings[language].State == TranslationRecordState.New)
                         {
                             translatedStrings.TranslatedStrings[language] = new TranslatedString()
                             {
@@ -360,9 +393,36 @@ public partial class Program
                         }
                     }
                 }
+                else
+                {
+                    translatedStrings = new TranslatedLanguageStrings()
+                    {
+                        OriginalString = origString,
+                    };
+
+                    foreach (var (langCode, translatedString) in translatedPairs)
+                    {
+                        var language = LanguageHelper.MapLanguage(langCode);
+
+                        translatedStrings.TranslatedStrings ??= new Dictionary<Language, TranslatedString>();
+
+                        if (!translatedStrings.TranslatedStrings.ContainsKey(language) || translatedStrings.TranslatedStrings[language].State == TranslationRecordState.New)
+                        {
+                            translatedStrings.TranslatedStrings[language] = new TranslatedString()
+                            {
+                                String = translatedString,
+                                State  = TranslationRecordState.GPT4oMiniGenerated,
+
+                            };
+                        }
+                    }
+                    allStrings[origString] = translatedStrings;
+                }
             }
             current += chunkSize;
-            Console.WriteLine($"Done {current}/{total}");
+            TimeSpan totalTime = stopWatch.Elapsed * ((double)total / (double)current);
+
+            Console.WriteLine($"Done {current}/{total} remiaining: {totalTime - stopWatch.Elapsed:g}");
             break;
         }
 
