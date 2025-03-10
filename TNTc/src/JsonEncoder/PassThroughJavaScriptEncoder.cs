@@ -96,8 +96,5 @@ public class PassThroughJavaScriptEncoder : JavaScriptEncoder
                 return true;
             }
         }
-
-
     }
-
 }

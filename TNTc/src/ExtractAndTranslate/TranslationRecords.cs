@@ -7,6 +7,15 @@ public class TranslationRecords
     public Language            Language { get; set; }
     public TranslationRecord[] Records  { get; set; }
 }
+
+public class TranslatedRecord
+{
+    public TranslationRecordState State { get; set; }
+    public string OriginalString { get; set; }
+    public string TranslatedString { get; set; }
+    public SourceLocation[] SourceLocations { get; set; }
+}
+
 public enum TranslationRecordState
 {
     New,
@@ -16,6 +25,7 @@ public enum TranslationRecordState
     Translated,
     Final,
 }
+
 public enum OldGoogleTranslateTranslationRecordState
 {   
 
@@ -25,6 +35,7 @@ public enum OldGoogleTranslateTranslationRecordState
     Translated,
     Final,
 }
+
 public class TranslationRecord
 {
     public OldGoogleTranslateTranslationRecordState State            { get; set; }
@@ -32,8 +43,16 @@ public class TranslationRecord
     public string                                   TranslatedString { get; set; }
     public SourceLocation[]                         SourceLocations  { get; set; }
 }
-public class TranslationRecordWriter
+
+public class TranslatedString
 {
+    public string String { get; set; }
+    public TranslationRecordState State { get; set; }
+}
 
-
+public class TranslatedLanguageStrings
+{
+    public string OriginalString { get; set; }
+    public Dictionary<Language, TranslatedString> TranslatedStrings { get; set; }
+    public List<SourceLocation> SourceLocations { get; set; }
 }

@@ -1,11 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Globalization;
 using J = System.Text.Json.Serialization.JsonPropertyNameAttribute;
-using N = System.Text.Json.Serialization.JsonIgnoreCondition;
-
 
 namespace TNTc;
 
@@ -14,10 +9,12 @@ public partial class OldSources
     [J("language")] public string            Language { get; set; }
     [J("sources")]  public SourceElement[][] Sources  { get; set; }
 }
+
 public partial class SourceClass
 {
     [J("path")] public string Path { get; set; }
 }
+
 public partial struct SourceElement
 {
     public SourceClass SourceClass;
@@ -26,6 +23,7 @@ public partial struct SourceElement
     public static implicit operator SourceElement(SourceClass SourceClass) => new SourceElement { SourceClass = SourceClass };
     public static implicit operator SourceElement(string      String)      => new SourceElement { String      = String };
 }
+
 internal static class OldSourcesConverter
 {
     public static readonly JsonSerializerOptions Settings = new(JsonSerializerDefaults.General)
@@ -39,6 +37,7 @@ internal static class OldSourcesConverter
         },
     };
 }
+
 internal class SourceElementConverter : JsonConverter<SourceElement>
 {
     public override bool CanConvert(Type t) => t == typeof(SourceElement);

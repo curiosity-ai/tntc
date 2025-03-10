@@ -1,12 +1,6 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using CodeScanner;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using TNTc;
-using OpenAI.Chat;
-using J = System.Text.Json.Serialization.JsonPropertyNameAttribute;
-using N = System.Text.Json.Serialization.JsonIgnoreCondition;
 
 namespace TNT.CLI;
 
@@ -80,7 +74,6 @@ public partial class Program
             }
         }
 
-
         WriteStringsToDisk(rootFolder, allStrings);
         File.Delete(Path.Combine(rootFolder, ".tnt", "sources.json"));
 
@@ -88,5 +81,4 @@ public partial class Program
 
         Console.WriteLine("Done.");
     }
-
 }

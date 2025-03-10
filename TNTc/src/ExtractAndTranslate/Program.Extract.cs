@@ -86,23 +86,8 @@ public partial class Program
     }
 
 
-    public class TranslatedString
-    {
-        public string                 String { get; set; }
-        public TranslationRecordState State  { get; set; }
-    }
-
-    public class TranslatedLanguageStrings
-    {
-        public string                                 OriginalString    { get; set; }
-        public Dictionary<Language, TranslatedString> TranslatedStrings { get; set; }
-        public List<SourceLocation>                   SourceLocations   { get; set; }
-    }
-
-
     public static async Task Extract(string rootFolderPath)
     {
-//        var languages = Enum.GetValues<Language>();
         Language[] languages = [Language.Chinese, Language.German, Language.French, Language.Spansih, Language.Italian, Language.Portuguese];
 
         var allStrings = ReadExisting(rootFolderPath, languages);
@@ -197,14 +182,6 @@ public partial class Program
         }
 
         return strings;
-    }
-
-    public class TranslatedRecord
-    {
-        public TranslationRecordState State            { get; set; }
-        public string                 OriginalString   { get; set; }
-        public string                 TranslatedString { get; set; }
-        public SourceLocation[]       SourceLocations  { get; set; }
     }
 
     private static void WriteStringsToDisk(string rootFolder, Dictionary<string, TranslatedLanguageStrings> allStrings)
@@ -430,8 +407,6 @@ public partial class Program
             Console.WriteLine($"Done {current}/{total} remiaining: {totalTime - elapsed:g}");
 
             WriteStringsToDisk(rootFolderPath, allStrings);
-
         }
-
     }
 }

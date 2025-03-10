@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Globalization;
 using J = System.Text.Json.Serialization.JsonPropertyNameAttribute;
-using N = System.Text.Json.Serialization.JsonIgnoreCondition;
 
 
 namespace TNTc;
@@ -14,6 +10,7 @@ public partial class OldRecords
     [J("language")] public string     Language { get; set; }
     [J("records")]  public Record[][] Records  { get; set; }
 }
+
 public partial struct Record
 {
     public string   String;
@@ -22,6 +19,7 @@ public partial struct Record
     public static implicit operator Record(string   String)      => new Record { String      = String };
     public static implicit operator Record(string[] StringArray) => new Record { StringArray = StringArray };
 }
+
 internal static class OldRecordsConverter
 {
     public static readonly JsonSerializerOptions Settings = new(JsonSerializerDefaults.General)
@@ -35,6 +33,7 @@ internal static class OldRecordsConverter
         },
     };
 }
+
 internal class RecordConverter : JsonConverter<Record>
 {
     public override bool CanConvert(Type t) => t == typeof(Record);

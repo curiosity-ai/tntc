@@ -1,11 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Globalization;
-using J = System.Text.Json.Serialization.JsonPropertyNameAttribute;
-using N = System.Text.Json.Serialization.JsonIgnoreCondition;
-
 
 namespace TNTc;
 

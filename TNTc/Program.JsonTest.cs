@@ -36,8 +36,5 @@ public partial class Program
         Console.WriteLine(expected);
         Console.WriteLine(result);
         Console.WriteLine(expected == result);
-
-
     }
-
 }

@@ -54,5 +54,4 @@ public static class UpgradeRecordsReader
             yield return translationRecords;
         }
     }
-  
 }
