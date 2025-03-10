@@ -408,5 +408,7 @@ public partial class Program
 
             WriteStringsToDisk(rootFolderPath, allStrings);
         }
+        WriteStringsToDisk(rootFolderPath, allStrings);
+
     }
 }
