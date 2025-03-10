@@ -131,9 +131,7 @@ public partial class Program
                 }
             }
         }
-        allStrings = await TranslateStringsAsync(allStrings, languages);
-
-        WriteStringsToDisk(rootFolderPath, allStrings);
+        await TranslateStringsAndWriteStringsToDiskAsync(rootFolderPath, allStrings, languages);
 
         Console.WriteLine("Done.");
     }
@@ -238,7 +236,7 @@ public partial class Program
                         State            = translatedString.State,
                         OriginalString   = translatedLanguageStrings.OriginalString,
                         TranslatedString = translatedString.String,
-                        SourceLocations  = translatedLanguageStrings.SourceLocations.ToArray()
+                        SourceLocations  = translatedLanguageStrings.SourceLocations?.ToArray()
                     });
                     perLanguage[language]        = records;
                     perLanguageTNTFile[language] = perLanguageTNTFile.GetValueOrDefault(language, new List<string[]>());
@@ -266,22 +264,24 @@ public partial class Program
         foreach (var keyValuePair in allStrings)
         {
             if (keyValuePair.Value.SourceLocations is object
-             && keyValuePair.Value.SourceLocations.Any()
-             && (keyValuePair.Value.TranslatedStrings is null
+             && keyValuePair.Value.SourceLocations.Any())
+            {
+                if ((keyValuePair.Value.TranslatedStrings is null
                  || languages.Any(l => !keyValuePair.Value.TranslatedStrings.ContainsKey(l))
                  || keyValuePair.Value.TranslatedStrings.Any(s => s.Value.State switch
                     {
                         TranslationRecordState.New => true,
                         _                          => false
                     })))
-            {
-                yield return new KeyValuePair<string, TranslatedLanguageStrings>(keyValuePair.Key, keyValuePair.Value);
+                {
+                    yield return new KeyValuePair<string, TranslatedLanguageStrings>(keyValuePair.Key, keyValuePair.Value);
+                }
             }
         }
     }
 
 
-    private static async Task<Dictionary<string, TranslatedLanguageStrings>> TranslateStringsAsync(Dictionary<string, TranslatedLanguageStrings> allStrings, Language[] languages)
+    private static async Task TranslateStringsAndWriteStringsToDiskAsync(string rootFolderPath, Dictionary<string, TranslatedLanguageStrings> allStrings, Language[] languages)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrEmpty(apiKey)) throw new ArgumentException("OPENAI_API_KEY missing as environment variable");
@@ -429,9 +429,9 @@ public partial class Program
 
             Console.WriteLine($"Done {current}/{total} remiaining: {totalTime - elapsed:g}");
 
-            if (current > 500) break;
+            WriteStringsToDisk(rootFolderPath, allStrings);
+
         }
 
-        return allStrings;
     }
 }

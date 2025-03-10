@@ -64,6 +64,15 @@ namespace CodeScanner
         public override TranslationRecordState Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             var value = reader.GetString();
+
+            switch (value)
+            {
+                case "f":
+                {
+                    return TranslationRecordState.Final;
+                }
+            }
+
             return Enum.Parse<TranslationRecordState>(value, ignoreCase: true);
         }
 
