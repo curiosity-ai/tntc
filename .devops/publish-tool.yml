@@ -1,0 +1,76 @@
+variables:
+  project:  './TNTC/TNTC.csproj'
+  buildConfiguration: 'Release'
+  targetVersion: yy.M.$(build.buildId)
+  ReleaseRepo: curiosity-ai/curiosity-cli
+  GH_TOKEN: $(GITHUB_TOKEN)
+  ReleaseNotesRelease: "Release"
+
+pool:
+  vmImage: 'windows-latest'
+
+trigger: 
+  branches:
+    include:
+    - master
+
+pr: none
+
+steps:
+- checkout: self
+  submodules: true
+  fetchDepth: 10
+  
+- task: PowerShell@2
+  displayName: 'Create CalVer Version'
+  inputs:
+    targetType: 'inline'
+    script: |
+      $dottedDate = (Get-Date).ToString("yy.M")
+      $buildID = $($env:BUILD_BUILDID) 
+      $newTargetVersion = "$dottedDate.$buildID"
+      Write-Host "##vso[task.setvariable variable=targetVersion;]$newTargetVersion"
+      Write-Host "Updated targetVersion to '$newTargetVersion'"
+
+- task: UseDotNet@2
+  displayName: 'Use .NET 9.0 SDK'
+  inputs:
+    packageType: sdk
+    version: 9.x
+    includePreviewVersions: false
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+- task: CmdLine@2
+  displayName: 'Install AzureSign'
+  inputs:
+    script: 'dotnet tool install --global AzureSign'
+
+- task: DotNetCoreCLI@2
+  displayName: 'restore nuget'
+  inputs:
+    command: 'restore'
+    projects: '$(project)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'build'
+  inputs:
+    command: 'build'
+    projects: '$(project)'
+    arguments: '-c $(buildConfiguration) /p:Version=$(targetVersion)  /p:AllowUnsafeBlocks=True /p:LangVersion=latest /p:WarningLevel=0 /p:AnalysisLevel=0'
+
+- task: DotNetCoreCLI@2
+  displayName: 'pack nuget'
+  inputs:
+    command: 'pack'
+    nobuild: true
+    configuration: '$(buildConfiguration)'
+    packagesToPack: '$(project)'
+    versioningScheme: 'off'
+
+- task: NuGetCommand@2
+  displayName: 'push nuget'
+  inputs:
+    command: 'push'
+    packagesToPush: '**/*.nupkg'
+    nuGetFeedType: 'external'
+    publishFeedCredentials: 'nuget-curiosity-org'
