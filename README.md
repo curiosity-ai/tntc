@@ -1,6 +1,6 @@
-# TNTc - The .NET Translation Tool
+# TNTC - The .NET Translation Tool
 
-TNTc is a command-line tool designed to help manage translations in .NET projects. It extracts strings from source code, manages translations across multiple languages, and provides a structured workflow for handling localization.
+TNTC is a command-line tool designed to help manage translations in .NET projects. It extracts strings from source code, manages translations across multiple languages, and provides a structured workflow for handling localization. It is loosely inspired by the original [TNT project](https://github.com/pragmatrix/tnt), but fully implemented in C# and supporting LLM-based translations via an OpenAI integration.
 
 ## Features
 
