@@ -58,15 +58,6 @@ steps:
     projects: '$(project)'
     arguments: '-c $(buildConfiguration) /p:Version=$(targetVersion)  /p:AllowUnsafeBlocks=True /p:LangVersion=latest /p:WarningLevel=0 /p:AnalysisLevel=0'
 
-- task: DotNetCoreCLI@2
-  displayName: 'pack nuget'
-  inputs:
-    command: 'pack'
-    nobuild: true
-    configuration: '$(buildConfiguration)'
-    packagesToPack: '$(project)'
-    versioningScheme: 'off'
-
 - task: NuGetCommand@2
   displayName: 'push nuget'
   inputs:
