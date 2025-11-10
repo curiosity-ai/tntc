@@ -309,6 +309,9 @@ public partial class Program
                            Space - a custom collection of items by the user
                            Workspace - the name of a Curiosity server instance
                            Sidebar - the sidebar in the app
+                           Node - a general data node
+                           Edge - a connection between data nodes
+                           Graph - Either the database or a graph of connected odes and Edges
 
                            Urls or urls in html should be kept literal and not be translated. Query parameters in urls should also be kept literal and not be translated.
 
