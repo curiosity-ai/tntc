@@ -304,7 +304,7 @@ public partial class Program
                            Translate the strings into these languages. Use the language code in brackets instead of the full language name.
                            {{languageStrings}}
 
-                           Words that should not be translated and be kept as the original string:
+                           These words should NEVER be translated and be kept literally in the target language:
                            Curiosity - the name of the app
                            Space - a custom collection of items by the user
                            Workspace - the name of a Curiosity server instance
