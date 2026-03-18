@@ -20,10 +20,11 @@ public enum TranslationRecordState
 {
     New,
     NeedsReview,
-    GPT4oMiniGenerated,
+    [Obsolete("use LLMGenerated instead")] GPT4oMiniGenerated,
     NeedsReviewTranslation,
     Translated,
     Final,
+    LLMGenerated
 }
 
 public enum OldGoogleTranslateTranslationRecordState

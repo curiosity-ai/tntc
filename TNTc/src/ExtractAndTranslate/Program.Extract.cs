@@ -297,42 +297,94 @@ public partial class Program
         {
             var languageStrings = string.Join("\n", languages.Select(l => $"{l} ({LanguageHelper.MapLanguage(l)})"));
 
-            var prompt = $$""""""
-                           You are translating strings extracted from the source code of an application into multiple languages. 
-                           They could either be from ui elements like buttons or text labels or information text for the user. 
+            var prompt = $$$""""""
+                            You are a professional software localizer translating application UI strings from English into multiple target languages.
 
-                           Translate the strings into these languages. Use the language code in brackets instead of the full language name.
-                           {{languageStrings}}
+                            Context:
+                            - The strings come from a software product UI.
+                            - They may be buttons, menu items, labels, settings, tooltips, onboarding text, empty states, error messages, admin/technical configuration text, or short help text.
+                            - Prioritize translations that sound natural to native speakers in software interfaces.
+                            - Do NOT translate literally if a more idiomatic UI phrasing is better.
+                            - Keep the meaning, tone, and intended action of the original text.
 
-                           These words should NEVER be translated and be kept literally in the target language:
-                           Curiosity - the name of the app
-                           Space - a custom collection of items by the user
-                           Workspace - the name of a Curiosity server instance
-                           Sidebar - the sidebar in the app
-                           Node - a general data node
-                           Edge - a connection between data nodes
-                           Graph - Either the database or a graph of connected odes and Edges
+                            Target languages:
+                            {{{languageStrings}}}
 
-                           Urls or urls in html should be kept literal and not be translated. Query parameters in urls should also be kept literal and not be translated.
+                            General translation rules:
+                            - Translate for real product usage, not word-for-word.
+                            - Prefer standard terminology used in desktop/web apps.
+                            - Keep translations concise when the source is concise.
+                            - For buttons, menu items, and short labels, prefer short established UI wording over explanatory wording.
+                            - For technical/admin strings, keep the translation technically correct, but avoid awkward literal phrasing.
+                            - If the English source is ungrammatical or slightly misspelled, infer the intended meaning and translate that intended meaning naturally.
+                            - Preserve whether the text is an instruction, label, status, warning, question, or command.
+                            - Preserve politeness/tone appropriate for software UI in the target language.
+                            - Do not add explanations, notes, or quotation marks unless present in the source.
 
-                           Only answer with a json document with this schema and nothing else:
-                           {
-                             "original string" : {
-                                  "language code" : "translated string",
-                                  "language code2" : "translated string2",
-                                  ...
-                             },
-                             "original string2" : {
-                                  "language code" : "translated string",
-                                  "language code2" : "translated string2",
-                                  ...
-                             }
-                           }
+                            Do NOT translate these product/domain terms. Keep them exactly as written:
+                            - Curiosity
+                            - Space
+                            - Workspace
+                            - Sidebar
+                            - Node
+                            - Edge
+                            - Graph
+                            - Query
 
-                           Translate these strings :
-                           {{JsonSerializer.Serialize(allStringsChunks.Select(kv => kv.Key).ToArray(), _optionsWrite)}}
+                            Additional terminology guidance:
+                            - “app” refers to the software application, not a mobile app specifically unless the source clearly means that.
+                            - “search” can mean either the feature/search function or a database/search-engine concept. Choose the most natural translation based on context.
+                            - “index”, “model”, “pipeline”, “connector”, “endpoint”, “scope”, “facet”, “sync”, “audit”, “token”, and similar technical terms should be translated only if there is a well-established and natural equivalent in the target language; otherwise keep the established borrowed term used in software UI.
+                            - Avoid overly literal renderings of technical terms when a standard localized term exists.
 
-                           """""";
+                            Formatting preservation rules:
+                            - Preserve placeholders exactly, including but not limited to:
+                              - {0}, {1}, {0:n0}, {0:MMM dd, yyyy}, {{variable}}, %s, %d
+                            - Preserve HTML/XML exactly, including tags, attributes, entities, and URLs.
+                            - Do not translate URLs.
+                            - Do not translate URL query parameters.
+                            - Preserve line breaks exactly.
+                            - Preserve leading/trailing spaces exactly.
+                            - Preserve punctuation, capitalization style, ellipses, and emoji unless the target language requires a small natural adjustment.
+                            - Preserve keyboard shortcuts and key names exactly, such as Ctrl, Shift, Esc, + N.
+                            - Preserve code-like fragments, file paths, CSS classes, MIME types, and identifiers exactly.
+
+                            UI-specific guidance:
+                            - Buttons/actions should sound like clickable commands.
+                            - Titles/headings should sound like section titles.
+                            - Status texts should sound like system states.
+                            - Warning/confirmation dialogs should be clear and natural.
+                            - Empty-state/help text may be slightly more natural than the source, but must stay faithful.
+                            - Avoid translating in a way that sounds like raw documentation when the source is normal UI.
+                            - Avoid overly formal phrasing unless the source is clearly formal.
+                                
+                            Consistency rules:
+                            - Translate identical source strings identically unless context clearly requires otherwise.
+                            - Keep recurring terminology consistent across all strings in the batch.
+                            - When a source term is ambiguous, choose the interpretation that is most likely in application UI/admin software context.
+
+                            Quality check before answering:
+                            - Verify that each translation is fluent and idiomatic.
+                            - Verify that protected terms/placeholders/HTML/URLs are unchanged.
+                            - Verify that no output contains explanatory text outside the JSON.
+                            - Verify that the output JSON is valid.
+
+                            Return ONLY a JSON object with this exact schema and nothing else:
+                            {
+                              "original string": {
+                                "language-code": "translated string",
+                                "language-code-2": "translated string"
+                              },
+                              "original string 2": {
+                                "language-code": "translated string",
+                                "language-code-2": "translated string"
+                              }
+                            }
+
+                            Translate these strings :
+                            {{{JsonSerializer.Serialize(allStringsChunks.Select(kv => kv.Key).ToArray(), _optionsWrite)}}}
+
+                            """""";
 
             ChatCompletion completion = await client.CompleteChatAsync(
             [
@@ -370,7 +422,7 @@ public partial class Program
                             translatedStrings.TranslatedStrings[language] = new TranslatedString()
                             {
                                 String = translatedString,
-                                State  = TranslationRecordState.GPT4oMiniGenerated,
+                                State  = TranslationRecordState.LLMGenerated,
 
                             };
                         }
@@ -394,7 +446,7 @@ public partial class Program
                             translatedStrings.TranslatedStrings[language] = new TranslatedString()
                             {
                                 String = translatedString,
-                                State  = TranslationRecordState.GPT4oMiniGenerated,
+                                State  = TranslationRecordState.LLMGenerated,
 
                             };
                         }
