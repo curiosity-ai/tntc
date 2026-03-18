@@ -263,7 +263,7 @@ public partial class Program
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrEmpty(apiKey)) throw new ArgumentException("OPENAI_API_KEY missing as environment variable");
 
-        ChatClient client = new(model: "gpt-4o-mini", apiKey: apiKey);
+        ChatClient client = new(model: "gpt-5.4-mini", apiKey: apiKey);
 
         var allStringsFiltered = FilterStrings(allStrings.AsEnumerable(), languages).ToArray();
 
