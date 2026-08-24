@@ -8,7 +8,6 @@ using CodeScanner;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using TNTc;
-using OpenAI.Chat;
 using J = System.Text.Json.Serialization.JsonPropertyNameAttribute;
 using N = System.Text.Json.Serialization.JsonIgnoreCondition;
 

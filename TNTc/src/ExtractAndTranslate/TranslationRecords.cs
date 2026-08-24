@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CodeScanner;
 
 namespace TNTc;
@@ -11,9 +12,14 @@ public class TranslationRecords
 public class TranslatedRecord
 {
     public TranslationRecordState State { get; set; }
-    public string OriginalString { get; set; }
-    public string TranslatedString { get; set; }
-    public SourceLocation[] SourceLocations { get; set; }
+
+    /// <summary>Identifies what produced the translation - the model id for <see cref="TranslationRecordState.ClaudeSkillGenerated"/>, whoever ran <c>apply</c> otherwise. Omitted when unknown, as it is on every record written before this was recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GeneratedBy { get; set; }
+
+    public string           OriginalString   { get; set; }
+    public string           TranslatedString { get; set; }
+    public SourceLocation[] SourceLocations  { get; set; }
 }
 
 public enum TranslationRecordState
@@ -24,7 +30,8 @@ public enum TranslationRecordState
     NeedsReviewTranslation,
     Translated,
     Final,
-    LLMGenerated
+    LLMGenerated,
+    ClaudeSkillGenerated
 }
 
 public enum OldGoogleTranslateTranslationRecordState
@@ -47,8 +54,12 @@ public class TranslationRecord
 
 public class TranslatedString
 {
-    public string String { get; set; }
-    public TranslationRecordState State { get; set; }
+    public string                 String      { get; set; }
+    public TranslationRecordState State       { get; set; }
+    public string?                GeneratedBy { get; set; }
+
+    /// <summary>A translation is pending while no text has been produced for it yet - <see cref="TranslationRecordState.New"/> alone does not mean pending, since the pre-LLM records carry text in that state.</summary>
+    public bool IsPending => string.IsNullOrWhiteSpace(String);
 }
 
 public class TranslatedLanguageStrings

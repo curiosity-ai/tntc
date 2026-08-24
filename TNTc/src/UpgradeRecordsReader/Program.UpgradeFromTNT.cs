@@ -74,7 +74,7 @@ public partial class Program
             }
         }
 
-        WriteStringsToDisk(rootFolder, allStrings);
+        TranslationStore.Write(rootFolder, allStrings, allStrings.Values.SelectMany(e => e.TranslatedStrings.Keys).Distinct().ToArray());
         File.Delete(Path.Combine(rootFolder, ".tnt", "sources.json"));
 
         File.WriteAllText(Path.Combine(rootFolder, ".tnt", "extra-sources.json"), JsonSerializer.Serialize<string[]>(new string[] { }));

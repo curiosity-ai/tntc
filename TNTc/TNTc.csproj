@@ -4,13 +4,14 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>annotations</Nullable>
   </PropertyGroup>
 
   <PropertyGroup>
     <ApplicationIcon>tntc-logo.ico</ApplicationIcon>
     <LangVersion>latest</LangVersion>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Version>0.0.46</Version>
+    <Version>0.1.0</Version>
     <IncludeReferencedProjects>true</IncludeReferencedProjects>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>true</IsPackable>
@@ -31,7 +32,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.13.0" />
-    <PackageReference Include="OpenAI" Version="2.1.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
   </ItemGroup>
 

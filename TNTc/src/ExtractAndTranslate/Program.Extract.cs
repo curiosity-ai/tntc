@@ -1,42 +1,14 @@
-using System.Diagnostics;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
-using System.Text.Unicode;
 using CodeScanner;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using TNTc;
-using OpenAI.Chat;
-using J = System.Text.Json.Serialization.JsonPropertyNameAttribute;
-using N = System.Text.Json.Serialization.JsonIgnoreCondition;
 
 namespace TNT.CLI;
 
 public partial class Program
 {
-    private static JsonSerializerOptions _optionsWrite = new JsonSerializerOptions()
-    {
-        WriteIndented = true,
-        Converters =
-        {
-            new SourceLocationConverter(),
-            new TranslationRecordStateConverter()
-        },
-        Encoder = new PassThroughJavaScriptEncoder()
-    };
-
-    private static JsonSerializerOptions _optionsRead = new JsonSerializerOptions()
-    {
-        Converters =
-        {
-            new SourceLocationConverter(),
-            new TranslationRecordStateConverter()
-        },
-    };
-
     private static List<TranslatableString> AnalyzeStrings(string sourceCode, string filePath)
     {
         var tree = CSharpSyntaxTree.ParseText(sourceCode);
@@ -60,7 +32,7 @@ public partial class Program
         {
             var sourceCode = File.ReadAllText(csFile);
 
-            foreach (var translatableString in AnalyzeStrings(sourceCode, csFile.Substring(rootFolderPathPrefix.Length)))
+            foreach (var translatableString in AnalyzeStrings(sourceCode, csFile.Substring(rootFolderPathPrefix.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
             {
                 yield return translatableString;
             }
@@ -85,40 +57,78 @@ public partial class Program
         }
     }
 
-
-    public static async Task Extract(string rootFolderPath)
+    /// <summary>Scans the sources for translatable strings, refreshes every source location, and queues anything not translated yet as <see cref="TranslationRecordState.New"/> with no text. Does not translate - that is what <c>missing</c> and <c>apply</c> are for.</summary>
+    public static void Extract(string rootFolderPath, string? languageCodes)
     {
-        Language[] languages = [Language.Chinese, Language.German, Language.French, Language.Spansih, Language.Italian, Language.Portuguese];
+        var languages  = LanguageHelper.ParseLanguages(languageCodes);
+        var allStrings = TranslationStore.Read(rootFolderPath, languages);
 
-        var allStrings = ReadExisting(rootFolderPath, languages);
-
-        var sourceFolders = EnumerateDirectoriesToSearchForStrings(rootFolderPath).ToArray();
-
-        var rootFolderPathPrefix = LongestCommonPrefix(sourceFolders);
-
-        foreach (var tntFolder in sourceFolders)
+        foreach (var entry in allStrings.Values)
         {
-            foreach (var translatableString in ExtractStrings(tntFolder, rootFolderPathPrefix))
-            {
-                if (allStrings.TryGetValue(translatableString.SourceString, out TranslatedLanguageStrings value))
-                {
-                    value.OriginalString = translatableString.SourceString;
+            entry.SourceLocations.Clear();
+        }
 
-                    value.SourceLocations.Add(translatableString.SourceLocation);
-                }
-                else
+        var sourceFolders        = EnumerateDirectoriesToSearchForStrings(rootFolderPath).ToArray();
+        var rootFolderPathPrefix = LongestCommonPrefix(sourceFolders);
+        var found                = 0;
+
+        foreach (var sourceFolder in sourceFolders)
+        {
+            foreach (var translatableString in ExtractStrings(sourceFolder, rootFolderPathPrefix))
+            {
+                found++;
+
+                if (!allStrings.TryGetValue(translatableString.SourceString, out var entry))
                 {
-                    allStrings[translatableString.SourceString] = new TranslatedLanguageStrings()
+                    entry = new TranslatedLanguageStrings()
                     {
-                        OriginalString  = translatableString.SourceString,
-                        SourceLocations = new List<SourceLocation>() { translatableString.SourceLocation }
+                        OriginalString    = translatableString.SourceString,
+                        TranslatedStrings = new Dictionary<Language, TranslatedString>(),
+                        SourceLocations   = new List<SourceLocation>()
                     };
+                    allStrings[translatableString.SourceString] = entry;
                 }
+
+                if (!entry.SourceLocations.Contains(translatableString.SourceLocation)) entry.SourceLocations.Add(translatableString.SourceLocation);
             }
         }
-        await TranslateStringsAndWriteStringsToDiskAsync(rootFolderPath, allStrings, languages);
 
-        Console.WriteLine("Done.");
+        var queued  = new Dictionary<Language, int>();
+        var unused  = 0;
+
+        foreach (var entry in allStrings.Values)
+        {
+            if (entry.SourceLocations.Count == 0)
+            {
+                unused++;
+                continue; // a string no source references any more never gets queued for translation
+            }
+
+            entry.TranslatedStrings ??= new Dictionary<Language, TranslatedString>();
+
+            foreach (var language in languages)
+            {
+                if (entry.TranslatedStrings.ContainsKey(language)) continue;
+
+                entry.TranslatedStrings[language] = new TranslatedString() { State = TranslationRecordState.New, String = "" };
+                queued[language]                  = queued.GetValueOrDefault(language) + 1;
+            }
+        }
+
+        TranslationStore.Write(rootFolderPath, allStrings, languages);
+
+        Console.WriteLine();
+        Console.WriteLine($"Found {found} translatable string usage(s), {allStrings.Count - unused} distinct string(s) in use, {unused} no longer referenced.");
+
+        foreach (var language in languages)
+        {
+            var pending = allStrings.Values.Count(e => e.SourceLocations.Count > 0 && e.TranslatedStrings.TryGetValue(language, out var t) && t.IsPending);
+
+            Console.WriteLine($"  {LanguageHelper.MapLanguage(language)} ({language}): {queued.GetValueOrDefault(language)} newly queued, {pending} pending in total");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Done. Run 'tntc missing' to get the pending strings, then 'tntc apply' to write the translations back.");
     }
 
     static string LongestCommonPrefix(string[] strs)
@@ -140,330 +150,5 @@ public partial class Program
         }
 
         return prefix;
-    }
-
-    private static Dictionary<string, TranslatedLanguageStrings> ReadExisting(string tntFolder, Language[] languages)
-    {
-        var strings = new Dictionary<string, TranslatedLanguageStrings>();
-
-        foreach (var language in languages)
-        {
-            var translationJson = File.ReadAllText(Path.Combine(tntFolder, ".tnt", $"translation-{LanguageHelper.MapLanguage(language)}.json"), Encoding.UTF8);
-
-            foreach (var translatedRecord in JsonSerializer.Deserialize<List<TranslatedRecord>>(translationJson, _optionsRead))
-            {
-                if (strings.TryGetValue(translatedRecord.OriginalString, out TranslatedLanguageStrings value))
-                {
-                    value.SourceLocations = new List<SourceLocation>();
-
-                    value.TranslatedStrings[language] = new TranslatedString()
-                    {
-                        State  = translatedRecord.State,
-                        String = translatedRecord.TranslatedString
-                    };
-
-                    strings[translatedRecord.OriginalString] = value;
-                }
-                else
-                {
-                    strings[translatedRecord.OriginalString] = new TranslatedLanguageStrings()
-                    {
-                        OriginalString = translatedRecord.OriginalString,
-                        TranslatedStrings = new Dictionary<Language, TranslatedString>
-                        {
-                            {
-                                language, new TranslatedString() { State = translatedRecord.State, String = translatedRecord.TranslatedString }
-                            }
-                        },
-                        SourceLocations = new List<SourceLocation>()
-                    };
-                }
-            }
-        }
-
-        return strings;
-    }
-
-    private static void WriteStringsToDisk(string rootFolder, Dictionary<string, TranslatedLanguageStrings> allStrings)
-    {
-        if (!Directory.Exists(Path.Combine(rootFolder, ".tnt")))
-        {
-            Directory.CreateDirectory(Path.Combine(rootFolder, ".tnt"));
-        }
-
-        if (!Directory.Exists(Path.Combine(rootFolder, ".tnt-content")))
-        {
-            Directory.CreateDirectory(Path.Combine(rootFolder, ".tnt-content"));
-        }
-
-        var perLanguage        = new Dictionary<Language, List<TranslatedRecord>>();
-        var perLanguageTNTFile = new Dictionary<Language, List<string[]>>();
-
-
-        foreach (var (origString, translatedLanguageStrings) in allStrings)
-        {
-            if (translatedLanguageStrings.TranslatedStrings is object)
-            {
-                foreach (var (language, translatedString) in translatedLanguageStrings.TranslatedStrings)
-                {
-                    var records = perLanguage.GetValueOrDefault(language, new List<TranslatedRecord>());
-
-                    records.Add(new TranslatedRecord()
-                    {
-                        State            = translatedString.State,
-                        OriginalString   = translatedLanguageStrings.OriginalString,
-                        TranslatedString = translatedString.String,
-                        SourceLocations  = translatedLanguageStrings.SourceLocations?.ToArray()
-                    });
-                    perLanguage[language]        = records;
-                    perLanguageTNTFile[language] = perLanguageTNTFile.GetValueOrDefault(language, new List<string[]>());
-                    perLanguageTNTFile[language].Add([origString, translatedString.String]);
-
-                }
-            }
-        }
-
-        foreach (var (language, translationPairs) in perLanguageTNTFile)
-        {
-            File.WriteAllText(Path.Combine(rootFolder, ".tnt-content", $"{LanguageHelper.MapLanguage(language)}.tnt"), JsonSerializer.Serialize(translationPairs.OrderBy(e => e.First(), StringComparer.Ordinal).ToArray(), _optionsWrite), Encoding.UTF8);
-        }
-
-        foreach (var (language, translationStates) in perLanguage)
-        {
-            File.WriteAllText(Path.Combine(rootFolder, ".tnt", $"translation-{LanguageHelper.MapLanguage(language)}.json"), JsonSerializer.Serialize(translationStates.OrderBy(e => e.OriginalString, StringComparer.Ordinal).ToArray(), _optionsWrite), Encoding.UTF8);
-        }
-    }
-
-
-    private static IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> FilterStrings(IEnumerable<KeyValuePair<string, TranslatedLanguageStrings>> allStrings, Language[] languages)
-    {
-
-        foreach (var keyValuePair in allStrings)
-        {
-            if (keyValuePair.Value.SourceLocations is object
-             && keyValuePair.Value.SourceLocations.Any())
-            {
-                if ((keyValuePair.Value.TranslatedStrings is null
-                 || languages.Any(l => !keyValuePair.Value.TranslatedStrings.ContainsKey(l))
-                 || keyValuePair.Value.TranslatedStrings.Any(s => s.Value.State switch
-                    {
-                        TranslationRecordState.New => true,
-                        _                          => false
-                    })))
-                {
-                    yield return new KeyValuePair<string, TranslatedLanguageStrings>(keyValuePair.Key, keyValuePair.Value);
-                }
-            }
-        }
-    }
-
-
-    private static async Task TranslateStringsAndWriteStringsToDiskAsync(string rootFolderPath, Dictionary<string, TranslatedLanguageStrings> allStrings, Language[] languages)
-    {
-        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (string.IsNullOrEmpty(apiKey)) throw new ArgumentException("OPENAI_API_KEY missing as environment variable");
-
-        ChatClient client = new(model: "gpt-5.4-mini", apiKey: apiKey);
-
-        var allStringsFiltered = FilterStrings(allStrings.AsEnumerable(), languages).ToArray();
-
-        var total     = allStringsFiltered.Length;
-        var current   = 0;
-        var chunkSize = 15;
-
-        ChatCompletionOptions options = new()
-        {
-            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                jsonSchemaFormatName: "translated_strings",
-                jsonSchema: BinaryData.FromBytes("""
-                                                 {
-                                                     "type" : "object",
-                                                     "properties": {},
-                                                     "additionalProperties" : {
-                                                         "type" : "object",
-                                                         "properties": {},
-                                                         "additionalProperties" : {
-                                                             "type" : "string"
-                                                        }
-                                                     }
-                                                 }
-                                                 """u8.ToArray()),
-                jsonSchemaIsStrict: true)
-        };
-
-        var stopWatch = Stopwatch.StartNew();
-
-        foreach (var allStringsChunks in allStringsFiltered.Chunk(chunkSize))
-        {
-            var languageStrings = string.Join("\n", languages.Select(l => $"{l} ({LanguageHelper.MapLanguage(l)})"));
-
-            var prompt = $$$""""""
-                            You are a professional software localizer translating application UI strings from English into multiple target languages.
-
-                            Context:
-                            - The strings come from a software product UI.
-                            - They may be buttons, menu items, labels, settings, tooltips, onboarding text, empty states, error messages, admin/technical configuration text, or short help text.
-                            - Prioritize translations that sound natural to native speakers in software interfaces.
-                            - Do NOT translate literally if a more idiomatic UI phrasing is better.
-                            - Keep the meaning, tone, and intended action of the original text.
-
-                            Target languages:
-                            {{{languageStrings}}}
-
-                            General translation rules:
-                            - Translate for real product usage, not word-for-word.
-                            - Prefer standard terminology used in desktop/web apps.
-                            - Keep translations concise when the source is concise.
-                            - For buttons, menu items, and short labels, prefer short established UI wording over explanatory wording.
-                            - For technical/admin strings, keep the translation technically correct, but avoid awkward literal phrasing.
-                            - If the English source is ungrammatical or slightly misspelled, infer the intended meaning and translate that intended meaning naturally.
-                            - Preserve whether the text is an instruction, label, status, warning, question, or command.
-                            - Preserve politeness/tone appropriate for software UI in the target language.
-                            - Do not add explanations, notes, or quotation marks unless present in the source.
-
-                            Do NOT translate these product/domain terms. Keep them exactly as written:
-                            - Curiosity
-                            - Space
-                            - Workspace
-                            - Sidebar
-                            - Node
-                            - Edge
-                            - Graph
-                            - Query
-
-                            Additional terminology guidance:
-                            - “app” refers to the software application, not a mobile app specifically unless the source clearly means that.
-                            - “search” can mean either the feature/search function or a database/search-engine concept. Choose the most natural translation based on context.
-                            - “index”, “model”, “pipeline”, “connector”, “endpoint”, “scope”, “facet”, “sync”, “audit”, “token”, and similar technical terms should be translated only if there is a well-established and natural equivalent in the target language; otherwise keep the established borrowed term used in software UI.
-                            - Avoid overly literal renderings of technical terms when a standard localized term exists.
-
-                            Formatting preservation rules:
-                            - Preserve placeholders exactly, including but not limited to:
-                              - {0}, {1}, {0:n0}, {0:MMM dd, yyyy}, {{variable}}, %s, %d
-                            - Preserve HTML/XML exactly, including tags, attributes, entities, and URLs.
-                            - Do not translate URLs.
-                            - Do not translate URL query parameters.
-                            - Preserve line breaks exactly.
-                            - Preserve leading/trailing spaces exactly.
-                            - Preserve punctuation, capitalization style, ellipses, and emoji unless the target language requires a small natural adjustment.
-                            - Preserve keyboard shortcuts and key names exactly, such as Ctrl, Shift, Esc, + N.
-                            - Preserve code-like fragments, file paths, CSS classes, MIME types, and identifiers exactly.
-
-                            UI-specific guidance:
-                            - Buttons/actions should sound like clickable commands.
-                            - Titles/headings should sound like section titles.
-                            - Status texts should sound like system states.
-                            - Warning/confirmation dialogs should be clear and natural.
-                            - Empty-state/help text may be slightly more natural than the source, but must stay faithful.
-                            - Avoid translating in a way that sounds like raw documentation when the source is normal UI.
-                            - Avoid overly formal phrasing unless the source is clearly formal.
-                                
-                            Consistency rules:
-                            - Translate identical source strings identically unless context clearly requires otherwise.
-                            - Keep recurring terminology consistent across all strings in the batch.
-                            - When a source term is ambiguous, choose the interpretation that is most likely in application UI/admin software context.
-
-                            Quality check before answering:
-                            - Verify that each translation is fluent and idiomatic.
-                            - Verify that protected terms/placeholders/HTML/URLs are unchanged.
-                            - Verify that no output contains explanatory text outside the JSON.
-                            - Verify that the output JSON is valid.
-
-                            Return ONLY a JSON object with this exact schema and nothing else:
-                            {
-                              "original string": {
-                                "language-code": "translated string",
-                                "language-code-2": "translated string"
-                              },
-                              "original string 2": {
-                                "language-code": "translated string",
-                                "language-code-2": "translated string"
-                              }
-                            }
-
-                            Translate these strings :
-                            {{{JsonSerializer.Serialize(allStringsChunks.Select(kv => kv.Key).ToArray(), _optionsWrite)}}}
-
-                            """""";
-
-            ChatCompletion completion = await client.CompleteChatAsync(
-            [
-                new UserChatMessage(prompt),
-            ], options);
-
-            var result = completion.Content[0].Text;
-
-            if (result.StartsWith("```json"))
-            {
-                result = result.Substring("```json".Length);
-            }
-
-            if (result.EndsWith("```"))
-            {
-                result = result.Substring(0, result.Length - "```".Length);
-            }
-
-            var resultParsed = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, string>>>(result);
-
-            foreach (var (origString, translatedPairs) in resultParsed)
-            {
-                TranslatedLanguageStrings translatedStrings;
-
-                if (allStrings.TryGetValue(origString, out translatedStrings))
-                {
-                    foreach (var (langCode, translatedString) in translatedPairs)
-                    {
-                        var language = LanguageHelper.MapLanguage(langCode);
-
-                        translatedStrings.TranslatedStrings ??= new Dictionary<Language, TranslatedString>();
-
-                        if (!translatedStrings.TranslatedStrings.ContainsKey(language) || translatedStrings.TranslatedStrings[language].State == TranslationRecordState.New)
-                        {
-                            translatedStrings.TranslatedStrings[language] = new TranslatedString()
-                            {
-                                String = translatedString,
-                                State  = TranslationRecordState.LLMGenerated,
-
-                            };
-                        }
-                    }
-                }
-                else
-                {
-                    translatedStrings = new TranslatedLanguageStrings()
-                    {
-                        OriginalString = origString,
-                    };
-
-                    foreach (var (langCode, translatedString) in translatedPairs)
-                    {
-                        var language = LanguageHelper.MapLanguage(langCode);
-
-                        translatedStrings.TranslatedStrings ??= new Dictionary<Language, TranslatedString>();
-
-                        if (!translatedStrings.TranslatedStrings.ContainsKey(language) || translatedStrings.TranslatedStrings[language].State == TranslationRecordState.New)
-                        {
-                            translatedStrings.TranslatedStrings[language] = new TranslatedString()
-                            {
-                                String = translatedString,
-                                State  = TranslationRecordState.LLMGenerated,
-
-                            };
-                        }
-                    }
-                    allStrings[origString] = translatedStrings;
-                }
-            }
-            current += chunkSize;
-            var elapsed = stopWatch.Elapsed;
-
-            TimeSpan totalTime = elapsed * ((double)total / (double)current);
-
-            Console.WriteLine($"Done {current}/{total} remiaining: {totalTime - elapsed:g}");
-
-            WriteStringsToDisk(rootFolderPath, allStrings);
-        }
-        WriteStringsToDisk(rootFolderPath, allStrings);
-
     }
 }
