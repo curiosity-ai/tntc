@@ -148,6 +148,20 @@ Upgrades existing TNT translations to the new JSON format. This is useful when m
 | `3` | `verify` found at least one error |
 | `5` | an unexpected failure |
 
+## The Claude Code skill
+
+The repository ships a Claude Code skill, [`tntc-translate`](.claude/skills/tntc-translate/SKILL.md),
+that drives the loop above end-to-end: it runs `extract`, takes batches from `missing`, translates
+them in-context (reading the source locations when a string is ambiguous), merges them back through
+`apply`'s validation, and finishes with `verify`. Translations it writes are recorded as
+`ClaudeSkillGenerated` with the producing model on `GeneratedBy`.
+
+The skill is also packed into the NuGet package under `skills/tntc-translate/`, so a consuming
+repository can copy it into its own `.claude/skills/` folder.
+
+Product-specific terminology does not live in the skill: it reads `.tnt/glossary.md` from the project
+folder being translated, where the do-not-translate terms and terminology choices belong.
+
 ## Translation Files Folder Structure
 
 - `.tnt/`: Configuration directory for translation settings

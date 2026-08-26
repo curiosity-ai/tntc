@@ -38,5 +38,8 @@
   <ItemGroup>
     <None Include="tntc-logo.png" Pack="true" PackagePath="\"/>
     <None Include="..\README.md" Pack="true" PackagePath="\"/>
+    <!-- The Claude Code skill that drives the extract/missing/apply/verify loop. Shipped in the
+         package so a consuming repo can copy it into its own .claude/skills/ folder. -->
+    <None Include="..\.claude\skills\tntc-translate\**" Pack="true" PackagePath="skills\tntc-translate"/>
   </ItemGroup>
 </Project>
