@@ -1,0 +1,34 @@
+<Project>
+  <!-- Keeps the repository's committed copy of the tntc-translate Claude Code skill in sync with
+       this package. Update-only by design: the skill folder is discovered by walking up from the
+       project to an existing .claude/skills/tntc-translate/.skills-version, so a repository that
+       never installed the skill (via 'tntc install-skill <repoRoot>') is left alone.
+       Opt out per build with /p:TntcSkipSkillUpdate=true. -->
+  <Target Name="TNTCSkillsUpdate" AfterTargets="Build" Condition="'$(TntcSkipSkillUpdate)' != 'true'">
+
+    <PropertyGroup>
+      <_TntcSkillMarkerRelativePath>.claude/skills/tntc-translate/.skills-version</_TntcSkillMarkerRelativePath>
+      <_TntcSkillRepoRoot>$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', '$(_TntcSkillMarkerRelativePath)'))</_TntcSkillRepoRoot>
+      <_TntcSkillPackageFolder>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../skills/tntc-translate/'))</_TntcSkillPackageFolder>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(_TntcSkillRepoRoot)' != ''">
+      <_TntcSkillInstalledFolder>$(_TntcSkillRepoRoot)/.claude/skills/tntc-translate/</_TntcSkillInstalledFolder>
+      <_TntcSkillInstalledVersion>$([System.IO.File]::ReadAllText('$(_TntcSkillInstalledFolder).skills-version').Trim())</_TntcSkillInstalledVersion>
+      <_TntcSkillPackageVersion>$([System.IO.File]::ReadAllText('$(_TntcSkillPackageFolder).skills-version').Trim())</_TntcSkillPackageVersion>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(_TntcSkillRepoRoot)' != '' and '$(_TntcSkillInstalledVersion)' != '$(_TntcSkillPackageVersion)'">
+      <_TntcSkillFiles Include="$(_TntcSkillPackageFolder)**"/>
+    </ItemGroup>
+
+    <Copy Condition="'@(_TntcSkillFiles)' != ''"
+          SourceFiles="@(_TntcSkillFiles)"
+          DestinationFiles="@(_TntcSkillFiles->'$(_TntcSkillInstalledFolder)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"/>
+
+    <Message Condition="'@(_TntcSkillFiles)' != ''"
+             Importance="high"
+             Text="TNTC.Skills: updated the tntc-translate skill in $(_TntcSkillInstalledFolder) ($(_TntcSkillInstalledVersion) -&gt; $(_TntcSkillPackageVersion)). Commit the diff."/>
+  </Target>
+</Project>

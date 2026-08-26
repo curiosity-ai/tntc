@@ -49,6 +49,15 @@ public static class SkillInstaller
 
         if (installed == ToolVersion) return;
 
+        // Never downgrade: when the repository's TNTC.Skills package is ahead of the tool, the tool
+        // is what needs updating - silently rewriting an older skill would make the two mechanisms
+        // flip the folder back and forth.
+        if (Version.TryParse(installed, out var installedVersion) && Version.TryParse(ToolVersion, out var toolVersion) && installedVersion > toolVersion)
+        {
+            Console.Error.WriteLine($"The installed {SKILL_NAME} skill ({installed}) is newer than this tool ({ToolVersion}) - update the tool: dotnet tool update --global TNTC");
+            return;
+        }
+
         WriteSkill(skillFolder);
 
         // stderr, so 'tntc missing' without --output keeps its stdout parseable

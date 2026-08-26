@@ -156,19 +156,40 @@ them in-context (reading the source locations when a string is ambiguous), merge
 `apply`'s validation, and finishes with `verify`. Translations it writes are recorded as
 `ClaudeSkillGenerated` with the producing model on `GeneratedBy`.
 
-The skill is embedded in the tool itself. To use it in a repository, install it once and commit
-the result:
+To use the skill in a repository, install it once and commit the result:
 
 ```bash
 tntc install-skill <repositoryRoot>    # writes .claude/skills/tntc-translate/ - commit it
 ```
 
 `install-skill` targets the repository root (where `.claude` lives), which is usually not the
-project folder with the `.tnt` folder - that sits deeper in the tree. Once installed, the
-`extract` / `missing` / `apply` / `verify` commands keep the skill in sync: whenever the installed
-`.skills-version` differs from the running tool's version they rewrite the skill folder and say so
-on stderr - that diff is expected and belongs in the commit, the same as any generated file. A
-repository that never ran `install-skill` is left alone.
+project folder with the `.tnt` folder - that sits deeper in the tree.
+
+After that first install, two mechanisms keep the committed copy in sync - use whichever fits the
+repository (they write identical content for a given version, so having both is harmless):
+
+- **The `TNTC.Skills` NuGet package** - for repositories that build .NET anyway. Add it to a
+  project that builds regularly:
+
+  ```xml
+  <PackageReference Include="TNTC.Skills" Version="..." PrivateAssets="all"/>
+  ```
+
+  Its `buildTransitive` target updates `.claude/skills/tntc-translate/` on build whenever the
+  installed `.skills-version` differs from the package's, and prints
+  `TNTC.Skills: updated the tntc-translate skill ... Commit the diff.` when it does. The committed
+  `PackageReference` version is the repository's source of truth, so up- and downgrades both apply.
+  Opt out per build with `/p:TntcSkipSkillUpdate=true`. (The TNTC tool package itself cannot be
+  `PackageReference`'d - NuGet rejects tool packages with NU1212 - which is why this companion
+  package exists.)
+
+- **The tool itself** - for everything else. The `extract` / `missing` / `apply` / `verify`
+  commands rewrite an installed skill whose `.skills-version` is older than the running tool, and
+  say so on stderr. The tool never downgrades: when the installed skill is newer (the repository's
+  package moved ahead), it prints a hint to `dotnet tool update --global TNTC` instead.
+
+Either way the diff is expected and belongs in the commit, the same as any generated file. A
+repository that never ran `install-skill` is left alone by both mechanisms.
 
 Product-specific terminology does not live in the skill: it reads `.tnt/glossary.md` from the project
 folder being translated, where the do-not-translate terms and terminology choices belong.

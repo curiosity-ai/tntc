@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <!-- .skills-version starts with a dot, which NuGet's default excludes would silently drop. -->
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <PackageId>TNTC.Skills</PackageId>
+    <!-- Consumers get PrivateAssets=all by default: the targets still run in the referencing
+         project, but the package never leaks into what that project itself publishes. -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <Description>Ships the tntc-translate Claude Code skill into the consuming repository: an MSBuild target updates .claude/skills/tntc-translate/ on build whenever the installed .skills-version differs from this package's. Companion to the TNTC dotnet tool, which cannot be PackageReference'd itself.</Description>
+    <PackageTags>Translation, languages, multi-language user interface, UI translation, Claude Code, skill</PackageTags>
+    <PackageIcon>tntc-logo.png</PackageIcon>
+    <Authors>Curiosity GmbH</Authors>
+    <Company>Curiosity GmbH</Company>
+    <Copyright>(c) Copyright 2025 Curiosity GmbH - all right reserved</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\TNTc\tntc-logo.png" Pack="true" PackagePath="\"/>
+    <None Include="..\README.md" Pack="true" PackagePath="\"/>
+    <None Include="..\.claude\skills\tntc-translate\**" Pack="true" PackagePath="skills\tntc-translate"/>
+    <None Include="buildTransitive\TNTC.Skills.targets" Pack="true" PackagePath="buildTransitive"/>
+  </ItemGroup>
+
+  <!-- The package carries its own .skills-version so the consuming build can compare it against
+       the installed one without knowing the package version by other means. The file is written on
+       every build (before Pack runs) and packed through the static item below. -->
+  <ItemGroup>
+    <None Include="$(IntermediateOutputPath).skills-version" Pack="true" PackagePath="skills\tntc-translate"/>
+  </ItemGroup>
+
+  <Target Name="_WriteSkillsVersion" BeforeTargets="BeforeBuild">
+    <WriteLinesToFile File="$(IntermediateOutputPath).skills-version" Lines="$(Version)" Overwrite="true" WriteOnlyWhenDifferent="true"/>
+  </Target>
+</Project>

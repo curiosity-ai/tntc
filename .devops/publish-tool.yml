@@ -1,5 +1,6 @@
 variables:
   project:  './TNTC/TNTC.csproj'
+  skillsProject: './TNTc.Skills/TNTc.Skills.csproj'
   buildConfiguration: 'Release'
   targetVersion: yy.M.$(build.buildId)
   ReleaseRepo: curiosity-ai/curiosity-cli
@@ -53,11 +54,24 @@ steps:
     projects: '$(project)'
 
 - task: DotNetCoreCLI@2
+  displayName: 'restore skills package'
+  inputs:
+    command: 'restore'
+    projects: '$(skillsProject)'
+
+- task: DotNetCoreCLI@2
   displayName: 'build'
   inputs:
     command: 'build'
     projects: '$(project)'
     arguments: '-c $(buildConfiguration) /p:Version=$(targetVersion)  /p:AllowUnsafeBlocks=True /p:LangVersion=latest /p:WarningLevel=0 /p:AnalysisLevel=0'
+
+- task: DotNetCoreCLI@2
+  displayName: 'build skills package'
+  inputs:
+    command: 'build'
+    projects: '$(skillsProject)'
+    arguments: '-c $(buildConfiguration) /p:Version=$(targetVersion)'
 
 - task: NuGetCommand@2
   displayName: 'push nuget'

@@ -1,0 +1,7 @@
+<Project>
+  <!-- One version for the tool and the skills package - the skill's .skills-version marker is
+       keyed on it, so the two must never drift. CI overrides it with /p:Version=<CalVer>. -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>
