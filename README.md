@@ -156,8 +156,19 @@ them in-context (reading the source locations when a string is ambiguous), merge
 `apply`'s validation, and finishes with `verify`. Translations it writes are recorded as
 `ClaudeSkillGenerated` with the producing model on `GeneratedBy`.
 
-The skill is also packed into the NuGet package under `skills/tntc-translate/`, so a consuming
-repository can copy it into its own `.claude/skills/` folder.
+The skill is embedded in the tool itself. To use it in a repository, install it once and commit
+the result:
+
+```bash
+tntc install-skill <repositoryRoot>    # writes .claude/skills/tntc-translate/ - commit it
+```
+
+`install-skill` targets the repository root (where `.claude` lives), which is usually not the
+project folder with the `.tnt` folder - that sits deeper in the tree. Once installed, the
+`extract` / `missing` / `apply` / `verify` commands keep the skill in sync: whenever the installed
+`.skills-version` differs from the running tool's version they rewrite the skill folder and say so
+on stderr - that diff is expected and belongs in the commit, the same as any generated file. A
+repository that never ran `install-skill` is left alone.
 
 Product-specific terminology does not live in the skill: it reads `.tnt/glossary.md` from the project
 folder being translated, where the do-not-translate terms and terminology choices belong.

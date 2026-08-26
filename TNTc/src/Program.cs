@@ -22,6 +22,7 @@ public partial class Program
         rootCommand.AddCommand(CreateMissingCommand());
         rootCommand.AddCommand(CreateApplyCommand());
         rootCommand.AddCommand(CreateVerifyCommand());
+        rootCommand.AddCommand(CreateInstallSkillCommand());
         rootCommand.AddCommand(CreateUpdateFromTNTCommand());
         rootCommand.AddCommand(CreateJsonTest());
 
@@ -66,7 +67,7 @@ public partial class Program
 
         command.AddArgument(projectFolderArg);
         command.AddOption(languagesOption);
-        command.SetHandler((projectFolder, languages) => Run(() => Program.Extract(projectFolder, languages)), projectFolderArg, languagesOption);
+        command.SetHandler((projectFolder, languages) => Run(() => { Program.Extract(projectFolder, languages); SkillInstaller.RefreshIfInstalled(projectFolder); }), projectFolderArg, languagesOption);
 
         return command;
     }
@@ -87,7 +88,7 @@ public partial class Program
         command.AddOption(outputOption);
         command.AddOption(includeUnusedOption);
         command.AddOption(retranslateOption);
-        command.SetHandler((projectFolder, languages, limit, output, includeUnused, retranslate) => Run(() => Program.Missing(projectFolder, languages, limit, output, includeUnused, retranslate)),
+        command.SetHandler((projectFolder, languages, limit, output, includeUnused, retranslate) => Run(() => { Program.Missing(projectFolder, languages, limit, output, includeUnused, retranslate); SkillInstaller.RefreshIfInstalled(projectFolder); }),
                            projectFolderArg, languagesOption, limitOption, outputOption, includeUnusedOption, retranslateOption);
 
         return command;
@@ -109,7 +110,7 @@ public partial class Program
         command.AddOption(stateOption);
         command.AddOption(allowWarningsOption);
         command.AddOption(forceOption);
-        command.SetHandler((projectFolder, batchFile, model, state, allowWarnings, force) => Run(() => Program.Apply(projectFolder, batchFile, model, state, allowWarnings, force)),
+        command.SetHandler((projectFolder, batchFile, model, state, allowWarnings, force) => Run(() => { Program.Apply(projectFolder, batchFile, model, state, allowWarnings, force); SkillInstaller.RefreshIfInstalled(projectFolder); }),
                            projectFolderArg, batchArg, modelOption, stateOption, allowWarningsOption, forceOption);
 
         return command;
@@ -125,7 +126,18 @@ public partial class Program
         command.AddArgument(projectFolderArg);
         command.AddOption(languagesOption);
         command.AddOption(strictOption);
-        command.SetHandler((projectFolder, languages, strict) => Run(() => Program.Verify(projectFolder, languages, strict)), projectFolderArg, languagesOption, strictOption);
+        command.SetHandler((projectFolder, languages, strict) => Run(() => { Program.Verify(projectFolder, languages, strict); SkillInstaller.RefreshIfInstalled(projectFolder); }), projectFolderArg, languagesOption, strictOption);
+
+        return command;
+    }
+
+    private static Command CreateInstallSkillCommand()
+    {
+        var command       = new Command("install-skill", "Install the tntc-translate Claude Code skill into a repository's .claude/skills/ folder. Once installed, the other commands keep it up to date with the tool.");
+        var repoRootArg   = new Argument<string>("repositoryRoot", () => ".", "The repository root - where the .claude folder lives (usually not the folder with the .tnt folder, which sits deeper in the tree).");
+
+        command.AddArgument(repoRootArg);
+        command.SetHandler((repositoryRoot) => Run(() => SkillInstaller.Install(repositoryRoot)), repoRootArg);
 
         return command;
     }

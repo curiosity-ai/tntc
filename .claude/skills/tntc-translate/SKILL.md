@@ -29,6 +29,9 @@ A "project" is any folder with a `.tnt` folder in it.
 # 0. once per machine
 dotnet tool install --global TNTC
 export DOTNET_ROLL_FORWARD=LatestMajor   # when only a newer runtime is installed
+# (this skill itself is installed/updated by `tntc install-skill <repoRoot>` -
+#  if a command prints "Updated the tntc-translate skill ... Commit the diff",
+#  include that diff in your commit)
 
 # 1. scan the sources, refresh locations, queue what has no translation
 tntc extract <projectFolder> [--languages de,fr]

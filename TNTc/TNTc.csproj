@@ -38,8 +38,11 @@
   <ItemGroup>
     <None Include="tntc-logo.png" Pack="true" PackagePath="\"/>
     <None Include="..\README.md" Pack="true" PackagePath="\"/>
-    <!-- The Claude Code skill that drives the extract/missing/apply/verify loop. Shipped in the
-         package so a consuming repo can copy it into its own .claude/skills/ folder. -->
+    <!-- The Claude Code skill that drives the extract/missing/apply/verify loop. Embedded so
+         'tntc install-skill' can write it into a consuming repo's .claude/skills/ folder (a dotnet
+         tool package cannot be PackageReference'd, so there is no MSBuild hook to copy it from the
+         package); also packed under skills/ so the nupkg content is inspectable. -->
     <None Include="..\.claude\skills\tntc-translate\**" Pack="true" PackagePath="skills\tntc-translate"/>
+    <EmbeddedResource Include="..\.claude\skills\tntc-translate\**" LogicalName="skills/tntc-translate/%(RecursiveDir)%(Filename)%(Extension)"/>
   </ItemGroup>
 </Project>
