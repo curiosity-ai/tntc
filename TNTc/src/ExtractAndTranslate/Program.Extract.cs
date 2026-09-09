@@ -42,7 +42,10 @@ public partial class Program
 
     public static IEnumerable<string> EnumerateDirectoriesToSearchForStrings(string rootFolderPath)
     {
-        yield return rootFolderPath;
+        // Full path, like the extra sources below: source locations are made relative to the longest
+        // common prefix of all scanned folders, so a relative project folder next to absolute extra
+        // sources would collapse that prefix to nothing and record machine-specific paths.
+        yield return Path.GetFullPath(rootFolderPath);
         Console.WriteLine($"Searching for strings in {Path.GetFullPath(rootFolderPath)}");
 
         if (File.Exists(Path.Combine(rootFolderPath, ".tnt", "extra-sources.json")))
