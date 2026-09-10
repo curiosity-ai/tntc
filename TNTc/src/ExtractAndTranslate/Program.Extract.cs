@@ -46,7 +46,6 @@ public partial class Program
         // common prefix of all scanned folders, so a relative project folder next to absolute extra
         // sources would collapse that prefix to nothing and record machine-specific paths.
         yield return Path.GetFullPath(rootFolderPath);
-        Console.WriteLine($"Searching for strings in {Path.GetFullPath(rootFolderPath)}");
 
         if (File.Exists(Path.Combine(rootFolderPath, ".tnt", "extra-sources.json")))
         {
@@ -55,16 +54,22 @@ public partial class Program
                 var fullPath = Path.GetFullPath(Path.Combine(rootFolderPath, extraPath));
 
                 yield return fullPath;
-                Console.WriteLine($"Searching for strings in {fullPath}");
             }
         }
     }
 
     /// <summary>Scans the sources for translatable strings, refreshes every source location, and queues anything not translated yet as <see cref="TranslationRecordState.New"/> with no text. Does not translate - that is what <c>missing</c> and <c>apply</c> are for.</summary>
-    public static void Extract(string rootFolderPath, string? languageCodes)
+    public static void Extract(string rootFolderPath, string? languageCodes, bool includePackages, bool scanAssemblies)
     {
         var languages  = LanguageHelper.ParseLanguages(languageCodes);
         var allStrings = TranslationStore.Read(rootFolderPath, languages);
+        var packages   = PackageTranslationStore.Read(rootFolderPath);
+
+        if (includePackages || scanAssemblies)
+        {
+            packages = ImportPackages(rootFolderPath, languages, includePackages, scanAssemblies, packages);
+            PackageTranslationStore.Write(rootFolderPath, packages);
+        }
 
         foreach (var entry in allStrings.Values)
         {
@@ -77,27 +82,33 @@ public partial class Program
 
         foreach (var sourceFolder in sourceFolders)
         {
-            foreach (var translatableString in ExtractStrings(sourceFolder, rootFolderPathPrefix))
-            {
-                found++;
-
-                if (!allStrings.TryGetValue(translatableString.SourceString, out var entry))
-                {
-                    entry = new TranslatedLanguageStrings()
-                    {
-                        OriginalString    = translatableString.SourceString,
-                        TranslatedStrings = new Dictionary<Language, TranslatedString>(),
-                        SourceLocations   = new List<SourceLocation>()
-                    };
-                    allStrings[translatableString.SourceString] = entry;
-                }
-
-                if (!entry.SourceLocations.Contains(translatableString.SourceLocation)) entry.SourceLocations.Add(translatableString.SourceLocation);
-            }
+            Console.WriteLine($"Searching for strings in {sourceFolder}");
         }
 
-        var queued  = new Dictionary<Language, int>();
-        var unused  = 0;
+        // The strings a referenced assembly was scanned for arrive here as ordinary usages, so a
+        // package's string is queued, reported and translated exactly like one of our own - it only
+        // names a member rather than a file and a line.
+        foreach (var translatableString in sourceFolders.SelectMany(f => ExtractStrings(f, rootFolderPathPrefix)).Concat(FromScannedAssemblies(packages)))
+        {
+            found++;
+
+            if (!allStrings.TryGetValue(translatableString.SourceString, out var entry))
+            {
+                entry = new TranslatedLanguageStrings()
+                {
+                    OriginalString    = translatableString.SourceString,
+                    TranslatedStrings = new Dictionary<Language, TranslatedString>(),
+                    SourceLocations   = new List<SourceLocation>()
+                };
+                allStrings[translatableString.SourceString] = entry;
+            }
+
+            if (!entry.SourceLocations.Contains(translatableString.SourceLocation)) entry.SourceLocations.Add(translatableString.SourceLocation);
+        }
+
+        var queued   = new Dictionary<Language, int>();
+        var covered  = new Dictionary<Language, int>();
+        var unused   = 0;
 
         foreach (var entry in allStrings.Values)
         {
@@ -111,23 +122,46 @@ public partial class Program
 
             foreach (var language in languages)
             {
-                if (entry.TranslatedStrings.ContainsKey(language)) continue;
+                // A package that translated the string already answers for it, so there is nothing to
+                // hand a translator - and a queued record of ours would only ask for the work twice.
+                // It is marked rather than dropped, so the file still lists every string in use and
+                // says who answers this one.
+                if (packages.TryGetTranslation(language, entry.OriginalString, out var fromPackage))
+                {
+                    covered[language] = covered.GetValueOrDefault(language) + 1;
+
+                    if (!entry.TranslatedStrings.TryGetValue(language, out var ours) || ours.IsPending)
+                    {
+                        entry.TranslatedStrings[language] = new TranslatedString() { State = TranslationRecordState.PackageProvided, String = "", GeneratedBy = fromPackage.Coordinates };
+                    }
+
+                    continue;
+                }
+
+                if (entry.TranslatedStrings.TryGetValue(language, out var existing))
+                {
+                    // A package that used to answer for it no longer does, so it is work again.
+                    if (existing.State != TranslationRecordState.PackageProvided || !existing.IsPending) continue;
+
+                    entry.TranslatedStrings.Remove(language);
+                }
 
                 entry.TranslatedStrings[language] = new TranslatedString() { State = TranslationRecordState.New, String = "" };
                 queued[language]                  = queued.GetValueOrDefault(language) + 1;
             }
         }
 
-        TranslationStore.Write(rootFolderPath, allStrings, languages);
+        TranslationStore.Write(rootFolderPath, allStrings, languages, packages);
 
         Console.WriteLine();
         Console.WriteLine($"Found {found} translatable string usage(s), {allStrings.Count - unused} distinct string(s) in use, {unused} no longer referenced.");
 
         foreach (var language in languages)
         {
-            var pending = allStrings.Values.Count(e => e.SourceLocations.Count > 0 && e.TranslatedStrings.TryGetValue(language, out var t) && t.IsPending);
+            var pending    = allStrings.Values.Count(e => e.SourceLocations.Count > 0 && e.TranslatedStrings.TryGetValue(language, out var t) && t.IsPending && t.State != TranslationRecordState.PackageProvided);
+            var byPackages = covered.GetValueOrDefault(language) > 0 ? $", {covered[language]} answered by a package" : "";
 
-            Console.WriteLine($"  {LanguageHelper.MapLanguage(language)} ({language}): {queued.GetValueOrDefault(language)} newly queued, {pending} pending in total");
+            Console.WriteLine($"  {LanguageHelper.MapLanguage(language)} ({language}): {queued.GetValueOrDefault(language)} newly queued, {pending} pending in total{byPackages}");
         }
 
         Console.WriteLine();

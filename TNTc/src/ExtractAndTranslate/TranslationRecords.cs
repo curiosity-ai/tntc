@@ -31,7 +31,10 @@ public enum TranslationRecordState
     Translated,
     Final,
     LLMGenerated,
-    ClaudeSkillGenerated
+    ClaudeSkillGenerated,
+
+    /// <summary>Translated by the package that ships the string, not by this project. Written into <c>.tnt/packages/</c> by <c>extract --include-packages</c>, never queued for this project's translator, and shadowed by a translation of our own.</summary>
+    PackageProvided
 }
 
 public enum OldGoogleTranslateTranslationRecordState

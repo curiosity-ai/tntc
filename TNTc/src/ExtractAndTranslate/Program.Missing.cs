@@ -6,11 +6,12 @@ namespace TNT.CLI;
 public partial class Program
 {
     /// <summary>Writes every string still waiting for a translation as a batch file, for a translator (the Claude Code skill, or a human) to fill in and hand to <c>apply</c>.</summary>
-    public static void Missing(string rootFolderPath, string? languageCodes, int limit, string? outputPath, bool includeUnused, string? retranslateStates)
+    public static void Missing(string rootFolderPath, string? languageCodes, int limit, string? outputPath, bool includeUnused, string? retranslateStates, bool includePackageCovered)
     {
-        var languages  = LanguageHelper.ParseLanguages(languageCodes);
+        var languages   = LanguageHelper.ParseLanguages(languageCodes);
         var retranslate = ParseStates(retranslateStates);
-        var allStrings = TranslationStore.Read(rootFolderPath, languages);
+        var allStrings  = TranslationStore.Read(rootFolderPath, languages);
+        var packages    = PackageTranslationStore.Read(rootFolderPath);
 
         var pending = new List<TranslationBatchItem>();
 
@@ -27,6 +28,12 @@ public partial class Program
             foreach (var language in languages)
             {
                 var code = LanguageHelper.MapLanguage(language);
+
+                // A string a referenced package translated is already answered; offering it here
+                // would buy a second wording of something the application already says correctly.
+                // --include-package-covered is how a project that wants its own wording asks for it:
+                // once it has a translation of its own, that one shadows the package's.
+                if (!includePackageCovered && packages.TryGetTranslation(language, entry.OriginalString, out _)) continue;
 
                 if (entry.TranslatedStrings is null || !entry.TranslatedStrings.TryGetValue(language, out var translated))
                 {
@@ -46,6 +53,17 @@ public partial class Program
                     item.CurrentTranslations      ??= new Dictionary<string, string>();
                     item.CurrentTranslations[code]  = translated.String;
                 }
+            }
+
+            foreach (var language in includePackageCovered ? languages : Array.Empty<Language>())
+            {
+                var code = LanguageHelper.MapLanguage(language);
+
+                if (!item.Translations.ContainsKey(code) || !packages.TryGetTranslation(language, entry.OriginalString, out var fromPackage)) continue;
+
+                // What the package says today, so a project overriding it can see what it is changing.
+                item.CurrentTranslations      ??= new Dictionary<string, string>();
+                item.CurrentTranslations[code]  = fromPackage.TranslatedString;
             }
 
             if (item.Translations.Count > 0) pending.Add(item);

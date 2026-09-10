@@ -19,6 +19,7 @@ public partial class Program
         var rootCommand = new RootCommand("The .NET Translation Tool");
 
         rootCommand.AddCommand(CreateExtractCommand());
+        rootCommand.AddCommand(CreateSyncCommand());
         rootCommand.AddCommand(CreateMissingCommand());
         rootCommand.AddCommand(CreateApplyCommand());
         rootCommand.AddCommand(CreateVerifyCommand());
@@ -59,15 +60,40 @@ public partial class Program
 
     private static Option<string> LanguagesOption() => new Option<string>("--languages", $"Comma-separated language codes to work on. Defaults to all of them: {LanguageHelper.AllLanguageCodes}");
 
+    private static Option<bool> IncludePackagesOption() => new Option<bool>("--include-packages", "Import the translation tables shipped by the packages this project restored to, so a string a package already translated is never queued here and reaches the application through '.tnt-content'. Off by default.");
+
+    private static Option<bool> ScanAssembliesOption() => new Option<bool>("--scan-assemblies", "Read the referenced assemblies for strings they will ask TNT to translate, so a package that draws UI but ships no tables still gets its strings queued here. Off by default.");
+
     private static Command CreateExtractCommand()
     {
-        var command          = new Command("extract", "Extract all strings from all sources, refresh their source locations, and queue the ones that have no translation yet.");
-        var projectFolderArg = ProjectFolderArgument();
-        var languagesOption  = LanguagesOption();
+        var command               = new Command("extract", "Extract all strings from all sources, refresh their source locations, and queue the ones that have no translation yet.");
+        var projectFolderArg      = ProjectFolderArgument();
+        var languagesOption       = LanguagesOption();
+        var includePackagesOption = IncludePackagesOption();
+        var scanAssembliesOption  = ScanAssembliesOption();
 
         command.AddArgument(projectFolderArg);
         command.AddOption(languagesOption);
-        command.SetHandler((projectFolder, languages) => Run(() => { Program.Extract(projectFolder, languages); SkillInstaller.RefreshIfInstalled(projectFolder); }), projectFolderArg, languagesOption);
+        command.AddOption(includePackagesOption);
+        command.AddOption(scanAssembliesOption);
+        command.SetHandler((projectFolder, languages, includePackages, scanAssemblies) => Run(() => { Program.Extract(projectFolder, languages, includePackages, scanAssemblies); SkillInstaller.RefreshIfInstalled(projectFolder); }),
+                           projectFolderArg, languagesOption, includePackagesOption, scanAssembliesOption);
+
+        return command;
+    }
+
+    private static Command CreateSyncCommand()
+    {
+        var command              = new Command("sync", "Re-import what the referenced packages contribute and rewrite '.tnt-content' from what is on file. Run it after a package moved; queuing new work is what 'extract' is for.");
+        var projectFolderArg     = ProjectFolderArgument();
+        var languagesOption      = LanguagesOption();
+        var scanAssembliesOption = ScanAssembliesOption();
+
+        command.AddArgument(projectFolderArg);
+        command.AddOption(languagesOption);
+        command.AddOption(scanAssembliesOption);
+        command.SetHandler((projectFolder, languages, scanAssemblies) => Run(() => { Program.Sync(projectFolder, languages, scanAssemblies); SkillInstaller.RefreshIfInstalled(projectFolder); }),
+                           projectFolderArg, languagesOption, scanAssembliesOption);
 
         return command;
     }
@@ -80,6 +106,7 @@ public partial class Program
         var limitOption        = new Option<int>("--limit", () => 0, "Maximum number of strings to write out. 0 (the default) writes all of them.");
         var outputOption       = new Option<string>("--output", "File to write the batch to. Writes to standard output when omitted.");
         var includeUnusedOption = new Option<bool>("--include-unused", "Also include strings no source file references any more. Off by default.");
+        var packageCoveredOption = new Option<bool>("--include-package-covered", "Also include strings a referenced package already translated, so this project can word one differently. A translation of our own then shadows the package's. Off by default.");
         var retranslateOption  = new Option<string>("--retranslate", $"Comma-separated states whose translations should be redone even though they carry text, e.g. 'New,NeedsReview'. Known states: {string.Join(", ", Enum.GetNames<TranslationRecordState>())}");
 
         command.AddArgument(projectFolderArg);
@@ -88,8 +115,18 @@ public partial class Program
         command.AddOption(outputOption);
         command.AddOption(includeUnusedOption);
         command.AddOption(retranslateOption);
-        command.SetHandler((projectFolder, languages, limit, output, includeUnused, retranslate) => Run(() => { Program.Missing(projectFolder, languages, limit, output, includeUnused, retranslate); SkillInstaller.RefreshIfInstalled(projectFolder); }),
-                           projectFolderArg, languagesOption, limitOption, outputOption, includeUnusedOption, retranslateOption);
+        command.AddOption(packageCoveredOption);
+        command.SetHandler((context) => Run(() =>
+                           {
+                               Program.Missing(context.ParseResult.GetValueForArgument(projectFolderArg),
+                                               context.ParseResult.GetValueForOption(languagesOption),
+                                               context.ParseResult.GetValueForOption(limitOption),
+                                               context.ParseResult.GetValueForOption(outputOption),
+                                               context.ParseResult.GetValueForOption(includeUnusedOption),
+                                               context.ParseResult.GetValueForOption(retranslateOption),
+                                               context.ParseResult.GetValueForOption(packageCoveredOption));
+                               SkillInstaller.RefreshIfInstalled(context.ParseResult.GetValueForArgument(projectFolderArg));
+                           }));
 
         return command;
     }

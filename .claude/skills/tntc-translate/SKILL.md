@@ -8,7 +8,9 @@ description: >-
   the code. Drives the tntc loop - extract, missing, translate in-context,
   apply, verify - so every translation is validated (placeholders, HTML, URLs,
   whitespace) before it is written, and records each one as
-  ClaudeSkillGenerated with the model that produced it.
+  ClaudeSkillGenerated with the model that produced it. Also covers the
+  strings drawn by referenced NuGet packages, whether they ship translation
+  tables or not.
 ---
 
 # Translating with TNTC
@@ -34,6 +36,8 @@ export DOTNET_ROLL_FORWARD=LatestMajor   # when only a newer runtime is installe
 #  include that diff in your commit)
 
 # 1. scan the sources, refresh locations, queue what has no translation
+#    (add --include-packages --scan-assemblies when the project draws UI from
+#     NuGet packages - see "Strings that come from a package" below)
 tntc extract <projectFolder> [--languages de,fr]
 
 # 2. get a batch of pending strings (repeat with --limit for a big backlog)
@@ -58,6 +62,53 @@ translate the languages the project already has translation files for.
 `claude-opus-5`) - it is recorded on every record as `GeneratedBy`, next to
 the `ClaudeSkillGenerated` state, so a reviewer can tell what produced which
 translation.
+
+## Strings that come from a package
+
+An application's UI is rarely all its own: a component library, a viewer, a
+charting package each draw text of their own, and `extract` cannot see their
+sources - they are not in this repository. Two flags cover them, and they
+belong together:
+
+```bash
+tntc extract <projectFolder> --include-packages --scan-assemblies
+```
+
+- **`--include-packages`** imports the `l10n/<code>.tnt` tables the restored
+  packages ship. A package that translated itself is then simply answered: its
+  strings reach the application through `.tnt-content`, and they are never
+  queued here.
+- **`--scan-assemblies`** reads the referenced assemblies' IL for the strings
+  they will ask TNT to translate. That is how a package which draws UI but
+  ships no tables still gets its strings in front of you.
+
+Both read `obj/project.assets.json`, so **the project has to be restored**
+(`dotnet restore`) or they find nothing and say so. What they found is written
+to `.tnt/packages/` and read by every other command, so `missing`, `apply` and
+`verify` need no flags. After a package version moves, `tntc sync
+<projectFolder>` re-imports and rewrites `.tnt-content` without rescanning the
+sources.
+
+Two things to know while translating:
+
+- **A scanned string names a member, not a file and a line.** Its
+  `sourceLocations` read `Tesserae!Tesserae.Helpers.Validation.NotEmpty:0` -
+  the package, then the type and method it is drawn from. You cannot open the
+  call site, so lean on the member name for context, and say so if a string is
+  genuinely ambiguous rather than guessing.
+- **A string a package already translated is not offered.** Pass
+  `--include-package-covered` to `missing` only when the user wants this
+  application to word something differently from the package; the package's
+  current wording then arrives in `currentTranslations`, and a translation of
+  our own shadows it.
+
+`extract --scan-assemblies` also reports call sites in those packages that
+build the string before looking it up (`$"…".t()` instead of `t($"…")`) - a
+bug in the package, unfixable from here, and worth passing on to the user.
+
+`verify` finishes with a per-package summary and, for the scanned strings, how
+many of them are answered by a package, by us, or by nothing. The last column
+is what renders in English however many languages the application ships.
 
 ## Filling in the batch
 
@@ -156,6 +207,7 @@ difference is genuinely correct for the target language.
 | State | Meaning | `apply` will |
 | --- | --- | --- |
 | `New` + empty text | pending - queued by `extract` | fill it |
+| `PackageProvided` + empty text | answered by a referenced package, not by us | leave it (see `--include-package-covered`) |
 | `New` + text | legacy machine translation, unreviewed | keep it unless the batch came from `--retranslate New` |
 | `LLMGenerated`, `GPT4oMiniGenerated` | earlier LLM pipeline | overwrite via `--retranslate` batches only |
 | `ClaudeSkillGenerated` | this skill | overwrite freely |
@@ -169,7 +221,8 @@ translations in those states for redoing; their current text arrives in
 
 - Commit the `.tnt/translation-*.json` **and** `.tnt-content/*.tnt` diffs
   together - the second is generated from the first and the application ships
-  it.
+  it. `.tnt/packages/` is generated too, and belongs in the same commit: it is
+  the reviewable record of what each referenced package contributes.
 - Never hand-edit `.tnt-content` - it is regenerated on every write.
 - A string still pending is deliberately left out of `.tnt-content`, so the
   app falls back to English instead of showing an empty label.

@@ -93,8 +93,12 @@ public static class TranslationStore
         return strings;
     }
 
-    /// <summary>Writes both folders for every requested language. A record with no translated text yet is kept in <c>.tnt</c> (it is the work queue) but left out of <c>.tnt-content</c>, so the application falls back to the original string instead of rendering an empty one.</summary>
+    /// <summary>Writes both folders for every requested language. A record with no translated text yet is kept in <c>.tnt</c> (it is the work queue) but left out of <c>.tnt-content</c>, so the application falls back to the original string instead of rendering an empty one. What the referenced packages contribute (<c>.tnt/packages/</c>) is folded into <c>.tnt-content</c> underneath this project's own entries - read from disk rather than from a restored package graph, so every command reproduces the same tables.</summary>
     public static void Write(string rootFolder, Dictionary<string, TranslatedLanguageStrings> allStrings, Language[] languages)
+        => Write(rootFolder, allStrings, languages, PackageTranslationStore.Read(rootFolder));
+
+    /// <inheritdoc cref="Write(string, Dictionary{string, TranslatedLanguageStrings}, Language[])"/>
+    public static void Write(string rootFolder, Dictionary<string, TranslatedLanguageStrings> allStrings, Language[] languages, PackageContributions packageContributions)
     {
         Directory.CreateDirectory(Path.Combine(rootFolder, TNT_FOLDER));
         Directory.CreateDirectory(Path.Combine(rootFolder, TNT_CONTENT_FOLDER));
@@ -125,6 +129,21 @@ public static class TranslationStore
 
         foreach (var (language, translationPairs) in perLanguageTNTFile)
         {
+            // A package's entry is only kept where this project has nothing of its own for that key:
+            // a workspace that words something differently keeps its wording, and a string it never
+            // had arrives translated.
+            var ours = new HashSet<string>(translationPairs.Select(p => p[0]), StringComparer.Ordinal);
+
+            if (packageContributions.Translations.TryGetValue(language, out var fromPackages))
+            {
+                foreach (var (originalString, translation) in fromPackages)
+                {
+                    if (!ours.Add(originalString)) continue;
+
+                    translationPairs.Add([originalString, translation.TranslatedString]);
+                }
+            }
+
             File.WriteAllText(ContentFilePath(rootFolder, language), JsonSerializer.Serialize(translationPairs.OrderBy(e => e[0], StringComparer.Ordinal).ToArray(), OptionsWrite), Encoding.UTF8);
         }
 

@@ -6,9 +6,9 @@ TNTC does not translate anything itself and needs no API key. It extracts the st
 
 ## Features
 
-- **String Extraction**: Automatically extracts translatable strings from C# source code
+- **String Extraction**: Automatically extracts translatable strings from C# source code, and from the referenced NuGet packages - their shipped tables, or their IL when they ship none
 - **Multi-language Support**: Handles translations for 20 languages - Chinese, Czech, Dutch, French, German, Greek, Hebrew, Hindi, Italian, Japanese, Korean, Malay, Nepali, Polish, Portuguese, Russian, Serbian, Spanish, Swedish and Ukrainian
-- **Translation State Management**: Tracks the state of translations (New, NeedsReview, NeedsReviewTranslation, Translated, Final, LLMGenerated, ClaudeSkillGenerated)
+- **Translation State Management**: Tracks the state of translations (New, NeedsReview, NeedsReviewTranslation, Translated, Final, LLMGenerated, ClaudeSkillGenerated, PackageProvided)
 - **Translation Validation**: Rejects a translation that dropped a placeholder, a tag, a link or the whitespace the caller concatenates against
 - **JSON-based Storage**: Stores translations in a structured JSON format, easily manageable on the source control of your code-base
 - **Source Location Tracking**: Keeps track of where translated strings were extracted from and used in the codebase
@@ -53,12 +53,15 @@ tntc apply    ./MyApp batch.json --model claude-opus-5  # merge them back, valid
 tntc verify   ./MyApp                                   # check every translation on file
 ```
 
+A fifth command, `sync`, re-reads what the referenced packages contribute - see
+[Strings that come from a package](#strings-that-come-from-a-package).
+
 Every command takes the project folder as its argument, and `--languages` to narrow the work to a
 comma-separated set of language codes (all 20 by default).
 
 ### Extract Command
 ```bash
-tntc extract <projectFolder> [--languages de,fr,zh]
+tntc extract <projectFolder> [--languages de,fr,zh] [--include-packages] [--scan-assemblies]
 ```
 Scans the source files for translatable strings using the [Roslyn compiler](https://en.wikipedia.org/wiki/Roslyn_(compiler)),
 refreshes each string's source locations, and queues anything with no translation yet as `New` with
@@ -68,9 +71,20 @@ empty text. The tool will look for any folder with a `.tnt` folder as a project 
 A string no source file references any more keeps its translation but ends up with no source
 locations, and is never queued for translation.
 
+`--include-packages` and `--scan-assemblies` widen the scan beyond this repository - see
+[Strings that come from a package](#strings-that-come-from-a-package).
+
+### Sync Command
+```bash
+tntc sync <projectFolder> [--languages de,fr] [--scan-assemblies]
+```
+Re-imports the translation tables the referenced packages ship and rewrites `.tnt-content` from what
+is on file. Run it after a package version moved. It does not read this project's sources, so it
+never queues anything - that is `extract`'s job.
+
 ### Missing Command
 ```bash
-tntc missing <projectFolder> [--languages de,fr] [--limit 50] [--output batch.json] [--include-unused] [--retranslate New]
+tntc missing <projectFolder> [--languages de,fr] [--limit 50] [--output batch.json] [--include-unused] [--retranslate New] [--include-package-covered]
 ```
 Writes every string still waiting for a translation to a batch file (or to standard output when
 `--output` is omitted), each with the source locations it is used at and one empty slot per language:
@@ -92,6 +106,10 @@ Writes every string still waiting for a translation to a batch file (or to stand
 
 Fill in each `translations` value and hand the file to `apply`. Leave a value empty to skip it. Never
 edit `originalString` - it is the key `apply` merges on.
+
+A string a referenced package already translated is left out, because it is already answered;
+`--include-package-covered` puts it back, for a project that wants to word something differently.
+The package's current wording then arrives in `currentTranslations`.
 
 `--limit` caps how many strings a batch carries and reports how many remain, so a large backlog can be
 worked in rounds. `--retranslate` also queues strings whose translation exists but is in one of the
@@ -128,8 +146,10 @@ Exits with `2` when any translation was rejected, so a script notices.
 tntc verify <projectFolder> [--languages de,fr] [--strict]
 ```
 Checks that every translation file parses and runs the table above over every translation already on
-file, then prints a per-language summary of totals, pending strings, strings no source references any
-more, and issues found. Exits with `3` when an error is found, so it can guard a build. `--strict`
+file, then prints a per-language summary of totals, pending strings, strings a referenced package
+answers, strings no source references any more, and issues found. When packages contributed, it
+finishes with what each one ships and - for the strings scanned out of their assemblies - how many
+are answered by a package, by this project, or by nothing. Exits with `3` when an error is found, so it can guard a build. `--strict`
 makes warnings count as errors too.
 
 ### Upgrade from TNT Command
@@ -137,6 +157,71 @@ makes warnings count as errors too.
 tntc upgrade-from-tnt <projectFolder>
 ```
 Upgrades existing TNT translations to the new JSON format. This is useful when migrating from an older version of the tool.
+
+## Strings that come from a package
+
+An application's UI is rarely all its own. A component library, a document viewer, a charting
+package each draw text, and `extract` cannot see any of it: those sources are not in the repository.
+For years the consequence was silent - a host shipping twenty languages showed an English button
+because the button belonged to a package.
+
+Two flags on `extract` close that, and they belong together:
+
+```bash
+tntc extract ./MyApp --include-packages --scan-assemblies
+```
+
+- **`--include-packages`** imports the tables a package ships. The convention is `l10n/<code>.tnt`
+  inside the nupkg - exactly the files `tntc` writes to `.tnt-content` - so a package translates
+  itself with TNTC and packs the result. Those strings are then *answered*: they reach the
+  application through this project's `.tnt-content` and are never queued for its translator.
+- **`--scan-assemblies`** reads the referenced assemblies' IL for the strings they will ask TNT to
+  translate, so a package that draws UI but ships no tables still gets its strings queued here.
+  Nothing has to change in the package for this to work.
+
+Both read the resolved graph from `obj/project.assets.json`, so the project has to have been
+restored; a project folder that was not is named on stderr and contributes nothing. What they find
+is written to `.tnt/packages/` - the manifest of what each package contributed, its tables, and the
+strings scanned out of its assemblies - and every other command reads it from there. So `missing`,
+`apply` and `verify` need no flags, and re-running them without a restore reproduces exactly the
+same `.tnt-content`.
+
+`.tnt/packages/` is generated and belongs in the commit: it is the reviewable record of what a
+package version contributes, which is the argument for settling precedence in a diff rather than
+merging tables at run time. When a package version moves, `tntc sync` re-imports it.
+
+### Precedence, and how to override
+
+For any one string and language:
+
+- a translation of this project's own wins, always;
+- otherwise the package's is used, and the project's record is marked `PackageProvided` with the
+  package's coordinates - so the file still lists every string in use and says who answers this one;
+- a package that stops shipping a string makes it work again on the next `extract`.
+
+To word something differently from the package, `tntc missing --include-package-covered` offers it
+with the package's current text in `currentTranslations`. Once applied, the project's translation
+shadows the package's.
+
+### What the scanner can and cannot tell you
+
+It matches the two shapes the C# compiler emits for TNT's two entry points - a literal handed to
+`t(string)`, and the format a `FormattableString` was built from before `t(FormattableString)`.
+`TNT.T` is matched by name rather than by assembly identity, because a Transpose library declares
+its own copy of it.
+
+- **A scanned key has no `path:line`.** It records the package, type and method it was found in
+  (`Tesserae!Tesserae.Helpers.Validation.NotEmpty:0`), so a translator can see where a string is
+  drawn but not open the call site. That is the quality argument for a package translating itself
+  and shipping the tables.
+- **A `t(string)` call whose argument is not a literal is reported, not recorded** - it is the
+  `$"…".t()` mistake, where the string is built before it is looked up and the table is asked for a
+  key it can never hold. Nothing can translate it; it is the package's to fix.
+- **A reference assembly carries no method bodies.** The runtime assets are scanned where a package
+  has them, and a package that ships only reference assemblies yields nothing rather than something
+  wrong.
+- A key read from IL is the key TNT will actually look up, format specifiers included
+  (`{0:n1} seconds`), which is not always what a source-level extractor records for the same call.
 
 ## Exit Codes
 
@@ -199,6 +284,9 @@ folder being translated, where the do-not-translate terms and terminology choice
 - `.tnt/`: Configuration directory for translation settings
   - `translation-{language}.json`: Translation files for each supported language
   - `extra-sources.json`: Configuration for additional source directories
+  - `packages/`: generated - what the referenced packages contribute (`packages.json` manifest,
+    `translations-{language}.json` tables, `strings.json` scanned out of their assemblies). Written
+    by `extract --include-packages` / `--scan-assemblies` and by `sync`; read by every command.
 - `.tnt-content/`: Directory containing the final translation files used by the application
   - `{language}.tnt`: the flat `[[original, translated], ...]` pairs the application loads at run time
   - A string still waiting for a translation is left out of these files, so the application falls back
