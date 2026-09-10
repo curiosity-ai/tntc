@@ -217,9 +217,10 @@ its own copy of it.
 - **A `t(string)` call whose argument is not a literal is reported, not recorded** - it is the
   `$"…".t()` mistake, where the string is built before it is looked up and the table is asked for a
   key it can never hold. Nothing can translate it; it is the package's to fix.
-- **A reference assembly carries no method bodies.** The runtime assets are scanned where a package
-  has them, and a package that ships only reference assemblies yields nothing rather than something
-  wrong.
+- **An assembly with no method bodies yields nothing** rather than something wrong. That is a
+  reference assembly (the runtime assets are scanned where a package has them), and also a
+  Transpose library built in Debug, which emits a metadata-only assembly - packages are packed from
+  Release, so this only bites when a package was produced by hand.
 - A key read from IL is the key TNT will actually look up, format specifiers included
   (`{0:n1} seconds`), which is not always what a source-level extractor records for the same call.
 

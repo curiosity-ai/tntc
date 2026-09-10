@@ -19,10 +19,14 @@ public partial class Program
 
         if (packages.IsEmpty) return;
 
-        Console.WriteLine();
-        Console.WriteLine("Referenced packages");
+        // A real graph is hundreds of packages and nearly all of them draw no UI, so only the ones
+        // that contributed something are worth a line.
+        var contributors = packages.Packages.Where(p => p.Tables.Count > 0 || p.ScannedStrings > 0).OrderBy(p => p.Id, StringComparer.OrdinalIgnoreCase).ToArray();
 
-        foreach (var package in packages.Packages.OrderBy(p => p.Id, StringComparer.OrdinalIgnoreCase))
+        Console.WriteLine();
+        Console.WriteLine($"Referenced packages: {contributors.Length} of {packages.Packages.Count} contribute strings");
+
+        foreach (var package in contributors)
         {
             var tables  = package.Tables.Count == 0 ? "no tables" : $"{package.Tables.Count} table(s): {string.Join(" ", package.Tables.Keys.OrderBy(c => c, StringComparer.Ordinal))}";
             var scanned = package.ScannedStrings is { } count ? $"{count} string(s) scanned" : "not scanned";
